@@ -135,9 +135,39 @@ const examSchema = z.object({
 }, {
   message: "Please specify the custom category",
   path: ["custom_type"]
+}).refine((data) => {
+  if (!data.scheduled_date) return true;
+  const selected = new Date(data.scheduled_date).getTime();
+  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" })).getTime();
+  // Allow a 2 minute buffer
+  return selected >= nowIST - 120000;
+}, {
+  message: "Scheduled time cannot be in the past",
+  path: ["scheduled_date"]
 });
 
 type ExamFormValues = z.infer<typeof examSchema>;
+
+const parseDateTime = (dtStr: string | undefined) => {
+    if (!dtStr) return { date: '', h: '12', m: '00', p: 'AM' };
+    const [d, t] = dtStr.split('T');
+    if (!t) return { date: d, h: '12', m: '00', p: 'AM' };
+    let [hh, mm] = t.split(':');
+    let hNum = parseInt(hh, 10);
+    const p = hNum >= 12 ? 'PM' : 'AM';
+    if (hNum === 0) hNum = 12;
+    if (hNum > 12) hNum -= 12;
+    return { date: d, h: String(hNum).padStart(2, '0'), m: mm, p };
+};
+
+const compileDateTime = (date: string, h: string, m: string, p: string) => {
+    if (!date) return '';
+    let hNum = parseInt(h, 10);
+    if (isNaN(hNum)) hNum = 12;
+    if (p === 'PM' && hNum < 12) hNum += 12;
+    if (p === 'AM' && hNum === 12) hNum = 0;
+    return `${date}T${String(hNum).padStart(2, '0')}:${m || '00'}`;
+};
 
 interface GeneratedQuestion {
   id: string;
@@ -575,6 +605,11 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
     }
   };
 
+  const minDateTime = useMemo(() => {
+    const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }, [isAddOpen, editingExam]);
+
   const pendingExams = useMemo(
     () => exams.filter((e) => e.approval_status === "pending"),
     [exams],
@@ -629,6 +664,11 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
               });
             } else {
               setIsAddOpen(true);
+              if (!editingExam) {
+                 const d = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                 const currentIST = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                 form.setValue("scheduled_date", currentIST);
+              }
             }
           }}
         >
@@ -746,22 +786,102 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                         <FormField
                           control={form.control}
                           name="scheduled_date"
-                          render={({ field }) => (
-                            <FormItem className="space-y-2">
-                              <FormLabel className="text-[11px] font-black uppercase tracking-widest text-slate-800">Date & Time</FormLabel>
-                              <FormControl>
-                                <div className="relative">
-                                  <CalendarIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                                  <Input 
-                                    type="datetime-local" 
-                                    className="h-14 rounded-2xl border-slate-300 bg-white pl-11 font-bold text-slate-900 shadow-sm"
-                                    {...field} 
-                                  />
-                                </div>
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
+                          render={({ field }) => {
+                            const { date, h, m, p } = parseDateTime(field.value);
+                            const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            const isToday = date === todayStr;
+                            
+                            const currentHour24 = now.getHours();
+                            const currentMinute = now.getMinutes();
+                            
+                            const currentP = currentHour24 >= 12 ? 'PM' : 'AM';
+                            let currentHNum = currentHour24 % 12;
+                            if (currentHNum === 0) currentHNum = 12;
+                            
+                            const availablePeriods = isToday ? ["AM", "PM"].filter(per => {
+                                if (currentP === 'PM') return per === 'PM';
+                                return true;
+                            }) : ["AM", "PM"];
+                            
+                            const hours = Array.from({length: 12}, (_, i) => String(i === 0 ? 12 : i).padStart(2, '0'));
+                            const availableHours = isToday && p === currentP ? hours.filter(hr => {
+                                let hrNum = parseInt(hr, 10);
+                                let currNum = currentHNum;
+                                if (hrNum === 12) hrNum = 0;
+                                let checkCurrNum = currNum === 12 ? 0 : currNum;
+                                return hrNum >= checkCurrNum;
+                            }) : hours;
+                          
+                            const mins = Array.from({length: 60}, (_, i) => String(i).padStart(2, '0'));
+                            const availableMins = isToday && p === currentP && parseInt(h,10) === currentHNum 
+                              ? mins.filter(mn => parseInt(mn, 10) >= currentMinute) 
+                              : mins;
+
+                            return (
+                              <FormItem className="space-y-2">
+                                <FormLabel className="text-[11px] font-black uppercase tracking-widest text-slate-800">Date & Time</FormLabel>
+                                <FormControl>
+                                  <div className="flex flex-col gap-2.5 w-full">
+                                    <div className="relative w-full">
+                                      <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                      <Input 
+                                        type="date" 
+                                        min={todayStr}
+                                        value={date}
+                                        onChange={(e) => field.onChange(compileDateTime(e.target.value, h, m, p))}
+                                        className="h-14 rounded-2xl border-slate-300 bg-white pl-10 font-bold text-slate-900 shadow-sm w-full"
+                                      />
+                                    </div>
+                                    <div className="flex gap-2 w-full">
+                                      <Select 
+                                        value={availableHours.includes(h) ? h : ""} 
+                                        onValueChange={(val) => field.onChange(compileDateTime(date, val, m, p))}
+                                      >
+                                        <SelectTrigger className="h-14 flex-1 rounded-2xl border-slate-300 bg-white font-bold text-slate-900 shadow-sm">
+                                          <SelectValue placeholder="HH" />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-[200px]">
+                                          {availableHours.map(hr => (
+                                            <SelectItem key={hr} value={hr} className="font-bold">{hr}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                            
+                                      <Select 
+                                        value={availableMins.includes(m) ? m : ""} 
+                                        onValueChange={(val) => field.onChange(compileDateTime(date, h, val, p))}
+                                      >
+                                        <SelectTrigger className="h-14 flex-1 rounded-2xl border-slate-300 bg-white font-bold text-slate-900 shadow-sm">
+                                          <SelectValue placeholder="MM" />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-[200px]">
+                                          {availableMins.map(mn => (
+                                            <SelectItem key={mn} value={mn} className="font-bold">{mn}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                            
+                                      <Select 
+                                        value={availablePeriods.includes(p) ? p : ""} 
+                                        onValueChange={(val) => field.onChange(compileDateTime(date, h, m, val))}
+                                      >
+                                        <SelectTrigger className="h-14 w-[85px] rounded-2xl border-slate-300 bg-white font-bold text-slate-900 shadow-sm">
+                                          <SelectValue placeholder="AM/PM" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {availablePeriods.map(per => (
+                                            <SelectItem key={per} value={per} className="font-bold">{per}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            );
+                          }}
                         />
                       </div>
 
@@ -793,7 +913,7 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
 
                         <div className="space-y-2">
                            <FormLabel className="text-[11px] font-black uppercase tracking-widest text-slate-800">Target Batches</FormLabel>
-                           <div className="flex flex-wrap gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-200 min-h-[56px]">
+                           <div className="flex flex-wrap gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 max-h-[120px] overflow-y-auto custom-scrollbar min-h-[50px] content-start">
                               {batches.length === 0 ? (
                                 <p className="text-[8px] font-bold text-slate-400 uppercase">No batches defined</p>
                               ) : batches.map(batch => (
@@ -808,9 +928,9 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                                     form.setValue("target_batches", next);
                                   }}
                                   className={cn(
-                                    "cursor-pointer font-black text-[8px] uppercase tracking-widest h-8 px-4 rounded-xl transition-all",
+                                    "cursor-pointer font-black text-[8px] uppercase tracking-widest h-7 px-3 rounded-lg transition-all",
                                     (form.watch("target_batches") || []).includes(batch.id)
-                                    ? "bg-slate-900 text-white border-slate-900 shadow-lg scale-105"
+                                    ? "bg-slate-900 text-white border-slate-900 shadow-md scale-105"
                                     : "bg-white text-slate-400 hover:border-slate-400"
                                   )}
                                 >
@@ -1092,7 +1212,10 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                       let dateStr = "";
                       if (examToEdit.scheduled_date) {
                         try {
-                           dateStr = new Date(examToEdit.scheduled_date).toISOString().slice(0, 16);
+                           const d = new Date(examToEdit.scheduled_date);
+                           const istStr = d.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                           const localD = new Date(istStr);
+                           dateStr = `${localD.getFullYear()}-${String(localD.getMonth() + 1).padStart(2, '0')}-${String(localD.getDate()).padStart(2, '0')}T${String(localD.getHours()).padStart(2, '0')}:${String(localD.getMinutes()).padStart(2, '0')}`;
                         } catch(e) {
                            console.error("Invalid date", examToEdit.scheduled_date);
                         }

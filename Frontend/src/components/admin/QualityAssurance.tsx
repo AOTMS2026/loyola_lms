@@ -286,29 +286,29 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
     return (
         <div className="space-y-6 animate-in fade-in duration-700">
             {/* Premium slate-900 High-Contrast Banner */}
-            <div className="relative overflow-hidden rounded-[2.5rem] p-6 sm:p-10 bg-slate-900 border border-slate-800 text-white shadow-2xl">
+            <div className="relative overflow-hidden rounded-[2.5rem] p-6 sm:p-10 bg-white border border-slate-200/80 shadow-xl">
                 <div className="absolute top-0 right-0 -mr-24 -mt-24 h-64 w-64 bg-primary/10 rounded-full blur-3xl" />
                 <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
                     <div className="space-y-3">
-                        <Badge className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 px-3.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-full">
+                        <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-700 border-none px-3.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-full">
                             System Control Hub
                         </Badge>
-                        <h2 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase italic leading-none">
-                            Quality <span className="text-blue-400 not-italic">Assurance</span>
+                        <h2 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase italic leading-none text-slate-900">
+                            Quality <span className="text-primary not-italic">Assurance</span>
                         </h2>
-                        <p className="text-slate-300 text-xs sm:text-sm font-semibold max-w-xl">
+                        <p className="text-slate-500 text-xs sm:text-sm font-semibold max-w-xl">
                             Perform database audits, inspect low-level table entries, and permanently purge redundant test registries.
                         </p>
                     </div>
                     <div className="flex items-center gap-4 self-start md:self-auto flex-wrap">
-                        <Badge variant="destructive" className="h-8 px-3.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider rounded-xl bg-red-500/10 border border-red-500/20 text-red-400">
+                        <Badge variant="destructive" className="h-8 px-3.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider rounded-xl bg-red-50 text-red-600 border border-red-100 shadow-sm">
                             <AlertTriangle className="h-3.5 w-3.5" />
                             Destructive Mode
                         </Badge>
                         <SyncDataButton 
                             onSync={onSync || (() => fetchSummary(true))} 
                             isLoading={parentLoading || loading} 
-                            className="h-11 px-5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider transition-all"
+                            className="h-11 px-5 rounded-xl bg-white hover:bg-slate-50 border-2 border-slate-100 text-slate-900 font-bold text-xs uppercase tracking-wider transition-all shadow-sm"
                         />
                     </div>
                 </div>

@@ -257,7 +257,7 @@ export function LiveMonitoring({ onSync, loading: parentLoading = false }: LiveM
                     <SyncDataButton 
                         onSync={onSync || (() => refresh())} 
                         isLoading={parentLoading || monitorLoading || adminLoading} 
-                        className="h-12 w-12 rounded-2xl bg-white shadow-xl shadow-slate-200/10 hover:bg-slate-50"
+                        className="h-12 px-6 rounded-2xl bg-white shadow-xl shadow-slate-200/10 hover:bg-slate-50"
                     />
                 </div>
             </div>

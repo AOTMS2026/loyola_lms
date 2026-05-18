@@ -507,7 +507,7 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                 <Badge className=" hover:bg-blue-500 text-white border-none px-3 py-0.5 text-[10px] font-black uppercase tracking-widest rounded-full">
                                     Administrative Hub
                                 </Badge>
-                                <h1 className="text-4xl sm:text-5xl font-black tracking-tighter uppercase italic leading-none">
+                                <h1 className="text-4xl sm:text-5xl font-black tracking-tighter uppercase italic leading-none text-slate-900">
                                     Question <span className="text-blue-400 not-italic">Access</span>
                                 </h1>
                             </div>
@@ -518,18 +518,7 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                     <div className="flex items-center gap-6">
                         <div className="text-right hidden sm:block">
                             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Active Protocols</p>
-                            <p className="text-4xl font-black text-white italic">{approvedBanks.length}</p>
-                        </div>
-                        <div className="h-16 w-[1px] bg-white/10 hidden sm:block" />
-                        <div className="flex -space-x-4">
-                            {[1, 2, 3, 4].map((i) => (
-                                <div key={i} className="h-12 w-12 rounded-2xl border-4 border-slate-900 bg-slate-800 flex items-center justify-center shadow-xl">
-                                    <Users className="h-5 w-5 text-slate-500" />
-                                </div>
-                            ))}
-                        <div className="h-12 w-12 rounded-2xl border-4 border-slate-900 bg-blue-600 flex items-center justify-center shadow-xl">
-                                <span className="text-[10px] font-black">+</span>
-                            </div>
+                            <p className="text-4xl font-black text-slate-900 italic">{approvedBanks.length}</p>
                         </div>
                         <SyncDataButton 
                             onSync={() => {
@@ -537,7 +526,7 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                 fetchPendingBanks(true, true);
                             }} 
                             isLoading={loading} 
-                            className="h-14 px-8 shadow-2xl shadow-blue-500/20 rounded-2xl bg-white/10 hover:bg-white/20 border-white/20 text-white"
+                            className="h-14 px-8 shadow-2xl shadow-blue-500/20 rounded-2xl bg-slate-900/10 hover:bg-slate-900/20 border-white/20 text-slate-900"
                         />
                     </div>
                 </div>
