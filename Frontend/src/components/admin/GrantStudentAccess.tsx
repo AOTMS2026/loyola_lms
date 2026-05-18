@@ -180,7 +180,14 @@ export function GrantStudentAccess({
           </div>
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2 rounded-xl h-10 shadow-md">
+              <Button 
+                className="gap-2 rounded-xl h-10 shadow-md"
+                onClick={() => {
+                   setSelectedStudent(null);
+                   setSelectedCourse(null);
+                   setSearchQuery('');
+                }}
+              >
                 <Plus className="h-4 w-4" />
                 Enroll Student
               </Button>
@@ -380,6 +387,7 @@ export function GrantStudentAccess({
                             className="w-full sm:w-auto sm:ml-auto h-9 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-xl shadow-none transition-all font-bold"
                             onClick={() => {
                                 setSelectedStudent(student);
+                                setSelectedCourse(null);
                                 setIsOpen(true);
                             }}
                          >
