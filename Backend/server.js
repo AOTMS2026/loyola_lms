@@ -1,4 +1,5 @@
 require('dotenv').config();
+process.env.TZ = 'Asia/Kolkata';
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -28,7 +29,7 @@ const { Exam, QuestionBank, StudentExamAccess, ExamResult, MockPaper, MockTestCo
 const { LiveClass } = require('./models/Content');
 const { SystemLog, SecurityEvent, LeaderboardStat, Notification, Attendance } = require('./models/System');
 const { Conversation, Message } = require('./models/Chat');
-const { Doubt } = require('./models/Doubt');
+const { Doubt, DoubtReply } = require('./models/Doubt');
 const { Batch, StudentBatch, BatchRequest } = require('./models/Batch');
 
 // Map table names to Models for generic routes
@@ -1188,9 +1189,9 @@ app.post('/api/student/mark-attendance', authenticateToken, async (req, res) => 
     try {
         const userId = req.user.id;
         const now = new Date();
-        const dateStr = now.toISOString().split('T')[0];
-        const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-        const dayStr = now.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+        const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+        const timeStr = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+        const dayStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).toUpperCase();
         const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
         // 1. Check if already marked for today (24H restart logic)
@@ -1465,20 +1466,59 @@ app.delete('/api/admin/question-bank/:topic', authenticateToken, requireInstruct
     if (!topic) return res.status(400).json({ error: 'Missing topic' });
 
     try {
-        const result = await QuestionBank.deleteMany({ topic });
-        
-        // Log action
+        const topicClean = topic.trim();
+        const safeTopicReg = topicClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const flexibleTopicRegex = new RegExp(`^\\s*${safeTopicReg.replace(/\\ /g, '\\s*')}\\s*$`, 'i');
+
+        // Find associated Exam and Mock Paper IDs for StudentExamAccess clean-up
+        const matchingExams = await Exam.find({ title: flexibleTopicRegex }).select('_id').lean();
+        const matchingMocks = await MockPaper.find({ title: flexibleTopicRegex }).select('_id').lean();
+        const examIds = matchingExams.map(e => e._id);
+        const mockIds = matchingMocks.map(m => m._id);
+
+        // Delete from QuestionBank
+        const qbResult = await QuestionBank.deleteMany({ topic: flexibleTopicRegex });
+
+        // Delete from Exam (Scheduling)
+        const examResult = await Exam.deleteMany({ title: flexibleTopicRegex });
+
+        // Delete from MockPaper
+        const mockResult = await MockPaper.deleteMany({ title: flexibleTopicRegex });
+
+        // Delete from StudentExamAccess
+        const accessResult = await StudentExamAccess.deleteMany({
+            $or: [
+                { question_bank_topic: flexibleTopicRegex },
+                { exam_id: { $in: examIds } },
+                { mock_paper_id: { $in: mockIds } }
+            ]
+        });
+
+        const totalDeletedCount = qbResult.deletedCount + examResult.deletedCount + mockResult.deletedCount + accessResult.deletedCount;
 
         // Log action
         await SystemLog.create({
             log_type: 'audit',
             module: 'QuestionBank',
-            action: `Question Bank & Associated Exams Permanently Removed for topic: ${topic}`,
-            details: { topic, deleted_count: result.deletedCount },
+            action: `Question Bank & Associated Exams & Student Access Permanently Removed for topic: ${topic}`,
+            details: { 
+                topic, 
+                qb_deleted_count: qbResult.deletedCount,
+                exam_deleted_count: examResult.deletedCount,
+                mock_deleted_count: mockResult.deletedCount,
+                access_deleted_count: accessResult.deletedCount,
+                total_deleted_count: totalDeletedCount
+            },
             user_id: req.user.id
         });
 
-        res.json({ message: `Question Bank & Exams for ${topic} permanently removed`, deleted_count: result.deletedCount });
+        res.json({ 
+            message: `Question Bank, Exams, and Access for ${topic} permanently removed`, 
+            deleted_count: qbResult.deletedCount,
+            exam_deleted_count: examResult.deletedCount,
+            mock_deleted_count: mockResult.deletedCount,
+            access_deleted_count: accessResult.deletedCount
+        });
     } catch (err) {
         handleError(res, err, 'remove-question-bank');
     }
@@ -3442,7 +3482,8 @@ app.post('/api/student/scan-resume', authenticateToken, upload.single('resume'),
                 console.log(`[ATS Scan Success] Extracted ${resumeText?.length || 0} chars from PDF.`);
             } catch (err) {
                 console.error('[ATS Scan OCR Error] PDF parsing failed:', err);
-                return res.status(500).json({ error: 'Failed to read the PDF content. Please ensure the file is not corrupted.' });
+                console.log('[ATS Scan] Proceeding without local text extraction, relying on n8n to parse the file.');
+                resumeText = "";
             }
         }
 
@@ -5795,14 +5836,19 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
     const Model = MODEL_MAP[table];
     if (!Model) return res.status(403).json({ error: 'Invalid table' });
 
-    // PERMANENTLY BLOCK COURSE DELETION
-    if (table === 'courses') {
-        return res.status(403).json({ error: 'Course deletion is permanently disabled. Please archive or deactivate the course instead.' });
-    }
-
     try {
         const role = await getUserRole(req.user.id);
-        const itemToDelete = await Model.findById(id);
+
+        // PERMANENTLY BLOCK COURSE DELETION (unless admin/manager is deleting in QA)
+        if (table === 'courses' && role !== 'admin' && role !== 'manager') {
+            return res.status(403).json({ error: 'Course deletion is permanently disabled. Please archive or deactivate the course instead.' });
+        }
+
+        let itemToDelete = await Model.findById(id);
+        if (!itemToDelete && table === 'users') {
+            console.log(`[CASCADE] User ${id} not found in users collection, but executing cascade purge for safety...`);
+            itemToDelete = { _id: id };
+        }
         if (!itemToDelete) return res.status(404).json({ error: 'Item not found' });
 
         // Security: Restrict deletions
@@ -5854,29 +5900,7 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
             }
         }
 
-        // --- CUSTOM HOOKS FOR CASCADE DELETION ---
-        if (table === 'exams') {
-            const topic = itemToDelete.title;
-            // 1. Delete associated student access records
-            await StudentExamAccess.deleteMany({ exam_id: id });
-            // 2. Delete associated exam schedules
-            // await ExamSchedule.deleteMany({ exam_id: id }); // Removed
-            // 3. Delete associated exam results (Grading Data)
-            await ExamResult.deleteMany({ exam_id: id });
-            
-            if (topic) {
-                console.log(`[CASCADE] Deleting legacy exam: "${topic}". Syncing Question Bank...`);
-                await QuestionBank.deleteMany({ topic });
-            }
-        } else if (table === 'mock_papers') {
-            // 1. Delete associated student access records
-            await StudentExamAccess.deleteMany({ mock_paper_id: id });
-            // 2. Delete associated exam results
-            await ExamResult.deleteMany({ mock_paper_id: id });
-        }
-        // ----------------------------------------
-        
-        // --- S3 PERMANENT DELETION ---
+        // --- S3 PERMANENT DELETION UTILITIES (Hoisted for safe use inside hooks) ---
         const extractS3Key = (url) => {
             if (!url) return null;
             try {
@@ -5909,6 +5933,74 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
                 }
             }
         };
+
+        // --- CUSTOM HOOKS FOR CASCADE DELETION ---
+        if (table === 'users') {
+            console.log(`[CASCADE] Deleting user ${id}. Purging profile and all related data...`);
+            await Promise.all([
+                Profile.deleteMany({ user_id: id }),
+                UserRole.deleteMany({ user_id: id }),
+                Enrollment.deleteMany({ user_id: id }),
+                ExamResult.deleteMany({ student_id: id }),
+                ExamResult.deleteMany({ user_id: id }),
+                StudentExamAccess.deleteMany({ student_id: id }),
+                Message.deleteMany({ sender: id }),
+                Conversation.deleteMany({ participants: id }),
+                SystemLog.deleteMany({ user_id: id }),
+                LeaderboardStat.deleteMany({ user_id: id }),
+                Notification.deleteMany({ user_id: id }),
+                Attendance.deleteMany({ student_id: id }),
+                StudentBatch.deleteMany({ student_id: id }),
+                BatchRequest.deleteMany({ student_id: id }),
+                Doubt.deleteMany({ user_id: id }),
+                DoubtReply.deleteMany({ user_id: id })
+            ]);
+        } else if (table === 'courses') {
+            console.log(`[CASCADE] Deleting course ${id}. Purging modules, resources, and student access...`);
+            
+            // Find all videos to delete from S3
+            const videos = await Video.find({ course_id: id }).lean();
+            for (const vid of videos) {
+                await deleteFromS3(vid.video_url);
+                await deleteFromS3(vid.thumbnail_url);
+            }
+            
+            // Find all resources to delete from S3
+            const resources = await Resource.find({ course_id: id }).lean();
+            for (const resItem of resources) {
+                await deleteFromS3(resItem.file_url);
+            }
+
+            await Promise.all([
+                Module.deleteMany({ course_id: id }),
+                Resource.deleteMany({ course_id: id }),
+                Video.deleteMany({ course_id: id }),
+                Enrollment.deleteMany({ course_id: id }),
+                Exam.deleteMany({ course_id: id }),
+                MockPaper.deleteMany({ course_id: id }),
+                ExamResult.deleteMany({ course_id: id }),
+                Timeline.deleteMany({ course_id: id }),
+                Announcement.deleteMany({ course_id: id }),
+                CourseRating.deleteMany({ course_id: id }),
+                Batch.deleteMany({ course_id: id })
+            ]);
+        } else if (table === 'exams') {
+            const topic = itemToDelete.title;
+            // 1. Delete associated student access records
+            await StudentExamAccess.deleteMany({ exam_id: id });
+            // 2. Delete associated exam results (Grading Data)
+            await ExamResult.deleteMany({ exam_id: id });
+            
+            if (topic) {
+                console.log(`[CASCADE] Deleting legacy exam: "${topic}". Syncing Question Bank...`);
+                await QuestionBank.deleteMany({ topic });
+            }
+        } else if (table === 'mock_papers') {
+            // 1. Delete associated student access records
+            await StudentExamAccess.deleteMany({ mock_paper_id: id });
+            // 2. Delete associated exam results
+            await ExamResult.deleteMany({ mock_paper_id: id });
+        }
 
         if (table === 'course_videos') {
             await deleteFromS3(itemToDelete.video_url);

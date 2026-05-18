@@ -136,7 +136,11 @@ export function LiveClassManager() {
 
             await createMeeting.mutateAsync({
                 ...formData,
-                startTime: `${selectedDate}T${selectedTime}`,
+                startTime: (() => {
+                    const [year, month, day] = selectedDate.split('-').map(Number);
+                    const [hours, minutes] = selectedTime.split(':').map(Number);
+                    return new Date(year, month - 1, day, hours, minutes).toISOString();
+                })(),
                 duration: 1440, // Increased duration to effectively remove the "ending concept"
                 target_batch: formData.targetBatch === 'all' ? 'all' : (courseBatches.find(b => b.id === formData.targetBatch)?.batch_type || 'all'),
                 batchId: formData.targetBatch === 'all' ? null : formData.targetBatch,

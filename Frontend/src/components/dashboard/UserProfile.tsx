@@ -148,6 +148,15 @@ export function UserProfile() {
         e.preventDefault();
         if (!user) return;
 
+        if (!profile.full_name?.trim()) {
+            toast({
+                title: 'Validation Error',
+                description: 'Please fill in the required details (e.g., Full Name) before saving.',
+                variant: 'destructive',
+            });
+            return;
+        }
+
         setSaving(true);
         try {
             const token = localStorage.getItem('access_token');
@@ -383,9 +392,10 @@ export function UserProfile() {
                         <form onSubmit={handleUpdate} className="space-y-4">
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="space-y-2">
-                                    <Label htmlFor="fullName">Full Name</Label>
+                                    <Label htmlFor="fullName">Full Name <span className="text-red-500">*</span></Label>
                                     <Input
                                         id="fullName"
+                                        required
                                         value={profile.full_name || ''}
                                         onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
                                     />

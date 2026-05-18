@@ -438,7 +438,15 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                     userIds: grantType === 'college' ? selectedCollegeStudents : undefined,
                     batchId: grantType === 'batch' ? selectedBatchId : undefined,
                     type: grantType,
-                    scheduled_date: scheduledDate ? new Date(scheduledDate).toISOString() : undefined
+                    scheduled_date: (() => {
+                        if (!scheduledDate) return undefined;
+                        const parts = scheduledDate.split('T');
+                        if (parts.length < 2) return new Date(scheduledDate).toISOString();
+                        const [datePart, timePart] = parts;
+                        const [year, month, day] = datePart.split('-').map(Number);
+                        const [hours, minutes] = timePart.split(':').map(Number);
+                        return new Date(year, month - 1, day, hours, minutes).toISOString();
+                    })()
                 })
             });
 

@@ -119,7 +119,15 @@ export function TimelineManager({ courseId }: TimelineManagerProps) {
       title: newMilestone.title,
       description: newMilestone.description || null,
       milestone_type: newMilestone.milestone_type,
-      scheduled_date: new Date(newMilestone.scheduled_date).toISOString(),
+      scheduled_date: (() => {
+        if (!newMilestone.scheduled_date) return new Date().toISOString();
+        const parts = newMilestone.scheduled_date.split('T');
+        if (parts.length < 2) return new Date(newMilestone.scheduled_date).toISOString();
+        const [datePart, timePart] = parts;
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hours, minutes] = timePart.split(':').map(Number);
+        return new Date(year, month - 1, day, hours, minutes).toISOString();
+      })(),
       allowed_batches: newMilestone.allowed_batches
     });
     setNewMilestone({

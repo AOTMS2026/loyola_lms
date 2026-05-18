@@ -56,6 +56,7 @@ import { useToast } from "@/hooks/use-toast";
 import { fetchWithAuth } from "@/lib/api";
 import {
   Plus,
+  Edit,
   Calendar as CalendarIcon,
   Clock,
   Trash2,
@@ -162,6 +163,7 @@ function ExamCard({
   onConfigure,
   isPast,
   userRole,
+  onEdit,
 }: {
   exam: Exam;
   onUpdate: (params: {
@@ -173,6 +175,7 @@ function ExamCard({
   onConfigure?: (exam: Exam) => void;
   isPast?: boolean;
   userRole?: string | null;
+  onEdit?: (exam: Exam) => void;
 }) {
   const isPending = exam.approval_status === "pending";
   const isRejected = exam.approval_status === "rejected";
@@ -321,6 +324,17 @@ function ExamCard({
           <Button
             variant="ghost"
             size="icon"
+            className="h-11 xl:h-12 w-11 xl:w-12 rounded-xl xl:rounded-2xl text-slate-900 hover:text-primary hover:bg-slate-50 transition-all border border-transparent hover:border-slate-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit?.(exam);
+            }}
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             className="h-11 xl:h-12 w-11 xl:w-12 rounded-xl xl:rounded-2xl text-slate-900 hover:text-destructive hover:bg-rose-50 transition-all border border-transparent hover:border-rose-100"
             onClick={(e) => {
               e.stopPropagation();
@@ -392,6 +406,7 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
   const batches = useMemo(() => Array.isArray(rawBatches) ? rawBatches : [], [rawBatches]);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedQuestions, setGeneratedQuestions] = useState<
     GeneratedQuestion[]
@@ -516,21 +531,45 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
       const { custom_type, ...restData } = data;
       const final_exam_type = data.exam_type === 'others' ? custom_type : data.exam_type;
 
-      await createExam.mutateAsync({
-        ...(restData as Omit<Exam, "id" | "created_at">),
-        exam_type: final_exam_type || restData.exam_type,
-        course_id: data.course_id || null,
-        target_batches: data.target_batches,
-        passing_marks,
-        status: "draft",
-        approval_status: "pending",
-        created_by: user.id || "",
-        scheduled_date: data.scheduled_date || new Date().toISOString(),
-      });
-      setIsAddOpen(false);
+      const scheduled_date_val = (() => {
+        if (!data.scheduled_date) return new Date().toISOString();
+        const parts = data.scheduled_date.split('T');
+        if (parts.length < 2) return new Date(data.scheduled_date).toISOString();
+        const [datePart, timePart] = parts;
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hours, minutes] = timePart.split(':').map(Number);
+        return new Date(year, month - 1, day, hours, minutes).toISOString();
+      })();
+
+      if (editingExam) {
+        await updateExam.mutateAsync({
+          id: editingExam.id,
+          ...(restData as Omit<Exam, "id" | "created_at">),
+          exam_type: final_exam_type || restData.exam_type,
+          course_id: data.course_id || null,
+          target_batches: data.target_batches,
+          passing_marks,
+          scheduled_date: scheduled_date_val,
+        });
+        setEditingExam(null);
+        toast({ title: "Architecture Successfully Updated" });
+      } else {
+        await createExam.mutateAsync({
+          ...(restData as Omit<Exam, "id" | "created_at">),
+          exam_type: final_exam_type || restData.exam_type,
+          course_id: data.course_id || null,
+          target_batches: data.target_batches,
+          passing_marks,
+          status: "draft",
+          approval_status: "pending",
+          created_by: user.id || "",
+          scheduled_date: scheduled_date_val,
+        });
+        setIsAddOpen(false);
+        setActiveStatusTab("pending"); // Ensure we show the pending section immediately
+        toast({ title: "Architecture Successfully Committed" });
+      }
       form.reset();
-      setActiveStatusTab("pending"); // Ensure we show the pending section immediately
-      toast({ title: "Architecture Successfully Committed" });
     } catch (error) {
       console.error(error);
     }
@@ -558,12 +597,38 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
           className="h-14 px-8 rounded-2xl bg-white/50 backdrop-blur-sm border-slate-100 shadow-xl"
         />
         <Dialog
-          open={isAddOpen}
+          open={isAddOpen || !!editingExam}
           onOpenChange={(val) => {
-            setIsAddOpen(val);
             if (!val) {
+              setIsAddOpen(false);
+              setEditingExam(null);
               setIsOtherType(false);
-              form.reset();
+              form.reset({
+                title: "",
+                description: "",
+                exam_type: "mock",
+                assigned_image: "",
+                duration_minutes: 60,
+                total_marks: 100,
+                passing_percentage: 40,
+                negative_marking: 0,
+                max_attempts: 1,
+                show_results: true,
+                browser_security: false,
+                shuffle_questions: true,
+                proctoring_enabled: false,
+                topics: [],
+                scheduled_date: "",
+                source_topic: "",
+                question_count: 10,
+                marking_scheme: "standard",
+                exam_mode: "automated",
+                course_id: "",
+                target_batches: [],
+                custom_fields: [{ label: "Exam Type", value: "Standard" }],
+              });
+            } else {
+              setIsAddOpen(true);
             }
           }}
         >
@@ -580,8 +645,12 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
 
                 <div className="space-y-1 text-left">
                   <DialogTitle className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                     <span className="bg-gradient-to-r from-slate-900 to-primary bg-clip-text text-transparent">Setup</span>
-                     <span className="text-primary italic">New Exam</span>
+                     <span className="bg-gradient-to-r from-slate-900 to-primary bg-clip-text text-transparent">
+                       {editingExam ? "Edit" : "Setup"}
+                     </span>
+                     <span className="text-primary italic">
+                       {editingExam ? "Exam Settings" : "New Exam"}
+                     </span>
                   </DialogTitle>
                   <DialogDescription className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
                     Configure your assessment settings
@@ -903,23 +972,26 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                           type="button" 
                           variant="ghost" 
                           className="h-14 flex-1 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-all"
-                          onClick={() => setIsAddOpen(false)}
+                          onClick={() => {
+                            setIsAddOpen(false);
+                            setEditingExam(null);
+                          }}
                         >
                           Abort
                         </Button>
                         <Button 
                           type="submit" 
-                          disabled={createExam.isPending}
+                          disabled={createExam.isPending || updateExam.isPending}
                           className="h-14 flex-[2] rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[11px] tracking-[0.3em] flex items-center justify-center gap-2 group"
                         >
-                          {createExam.isPending ? (
+                          {(createExam.isPending || updateExam.isPending) ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin" />
                               <span>Processing...</span>
                             </>
                           ) : (
                             <>
-                              <span>Create Exam</span>
+                              <span>{editingExam ? "Update Exam" : "Create Exam"}</span>
                               <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                             </>
                           )}
@@ -1016,6 +1088,50 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                     onUpdate={(p) => updateExam.mutate({ id: p.id, ...p })}
                     onDelete={(id) => deleteExam.mutate(id)}
                     onConfigure={() => onNavigateToRepository?.()}
+                    onEdit={(examToEdit) => {
+                      let dateStr = "";
+                      if (examToEdit.scheduled_date) {
+                        try {
+                           dateStr = new Date(examToEdit.scheduled_date).toISOString().slice(0, 16);
+                        } catch(e) {
+                           console.error("Invalid date", examToEdit.scheduled_date);
+                        }
+                      }
+                      
+                      const passedTargetBatches = Array.isArray(examToEdit.target_batches) 
+                         ? examToEdit.target_batches 
+                         : typeof examToEdit.target_batches === 'string' 
+                            ? [examToEdit.target_batches] 
+                            : [];
+
+                      form.reset({
+                        title: examToEdit.title || "",
+                        description: examToEdit.description || "",
+                        exam_type: examToEdit.exam_type || "mock",
+                        assigned_image: examToEdit.assigned_image || "",
+                        duration_minutes: examToEdit.duration_minutes || 60,
+                        total_marks: examToEdit.total_marks || 100,
+                        passing_percentage: examToEdit.passing_marks && examToEdit.total_marks 
+                          ? Math.round((examToEdit.passing_marks / examToEdit.total_marks) * 100) 
+                          : 40,
+                        negative_marking: examToEdit.negative_marking || 0,
+                        max_attempts: examToEdit.max_attempts || 1,
+                        show_results: examToEdit.show_results ?? true,
+                        browser_security: examToEdit.browser_security ?? false,
+                        shuffle_questions: examToEdit.shuffle_questions ?? true,
+                        proctoring_enabled: examToEdit.proctoring_enabled ?? false,
+                        topics: examToEdit.topics || [],
+                        scheduled_date: dateStr,
+                        course_id: examToEdit.course_id || "",
+                        target_batches: passedTargetBatches,
+                        custom_fields: examToEdit.custom_fields || [{ label: "Exam Type", value: "Standard" }],
+                        source_topic: examToEdit.source_topic || "",
+                        question_count: examToEdit.total_questions || 10,
+                        marking_scheme: "standard",
+                        exam_mode: "automated"
+                      });
+                      setEditingExam(examToEdit);
+                    }}
                   />
                 ));
               })()}

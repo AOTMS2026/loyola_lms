@@ -165,7 +165,7 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
                     endpoint = `/data/${dataType}`;
             }
             const data = await fetchWithAuth(endpoint);
-            setDataList(Array.isArray(data) ? data.slice(0, 50) : []);
+            setDataList(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error('Failed to fetch data', err);
             setDataList([]);
@@ -191,10 +191,10 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
 
         try {
             setLoadingData(true);
-            let endpoint = `/api/data/${viewingDataType === 'questionBanks' ? 'question_bank' : viewingDataType === 'enrollments' ? 'course_enrollments' : viewingDataType}/${id}`;
+            let endpoint = `/data/${viewingDataType === 'questionBanks' ? 'question_bank' : viewingDataType === 'enrollments' ? 'course_enrollments' : viewingDataType}/${id}`;
             
             // Map common types to generic backend tables if needed
-            if (viewingDataType === 'users') endpoint = `/api/data/users/${id}`;
+            if (viewingDataType === 'users') endpoint = `/data/users/${id}`;
             
             await fetchWithAuth(endpoint, { method: 'DELETE' });
             
@@ -267,6 +267,10 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
     const getItemId = (item: BaseDataItem, dataType: string): string => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const i = item as any;
+        if (dataType === 'users') {
+            const uId = i.user_id?._id || i.user_id || i._id;
+            return typeof uId === 'object' ? uId.toString() : String(uId || '');
+        }
         return i.id || i._id?.toString() || i.user_id?.toString() || i.course_id?.toString() || 'N/A';
     };
 
@@ -280,87 +284,113 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                    <h2 className="text-lg sm:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6 text-primary flex-shrink-0" />
-                        Quality Assurance
-                    </h2>
-                    <p className="text-muted-foreground text-xs sm:text-sm font-medium">
-                        Permanently remove data from the database. This action cannot be undone.
-                    </p>
-                </div>
-                <div className="flex items-center gap-3 self-start sm:self-auto">
-                    <Badge variant="destructive" className="h-6 sm:h-7 px-2.5 sm:px-3 flex items-center gap-2 text-xs">
-                        <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                        Destructive Actions
-                    </Badge>
-                    <SyncDataButton 
-                        onSync={onSync || (() => fetchSummary(true))} 
-                        isLoading={parentLoading || loading} 
-                        className="h-10 px-4"
-                    />
+        <div className="space-y-6 animate-in fade-in duration-700">
+            {/* Premium slate-900 High-Contrast Banner */}
+            <div className="relative overflow-hidden rounded-[2.5rem] p-6 sm:p-10 bg-slate-900 border border-slate-800 text-white shadow-2xl">
+                <div className="absolute top-0 right-0 -mr-24 -mt-24 h-64 w-64 bg-primary/10 rounded-full blur-3xl" />
+                <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+                    <div className="space-y-3">
+                        <Badge className="bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 px-3.5 py-1 text-[9px] font-black uppercase tracking-widest rounded-full">
+                            System Control Hub
+                        </Badge>
+                        <h2 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase italic leading-none">
+                            Quality <span className="text-blue-400 not-italic">Assurance</span>
+                        </h2>
+                        <p className="text-slate-300 text-xs sm:text-sm font-semibold max-w-xl">
+                            Perform database audits, inspect low-level table entries, and permanently purge redundant test registries.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-4 self-start md:self-auto flex-wrap">
+                        <Badge variant="destructive" className="h-8 px-3.5 flex items-center gap-2 text-[10px] font-black uppercase tracking-wider rounded-xl bg-red-500/10 border border-red-500/20 text-red-400">
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Destructive Mode
+                        </Badge>
+                        <SyncDataButton 
+                            onSync={onSync || (() => fetchSummary(true))} 
+                            isLoading={parentLoading || loading} 
+                            className="h-11 px-5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs uppercase tracking-wider transition-all"
+                        />
+                    </div>
                 </div>
             </div>
 
-            <Card className="border-2 border-red-200 bg-red-50/30">
+            {/* Warning Alert Banner */}
+            <Card className="border border-red-500/15 bg-red-500/5 backdrop-blur-md rounded-3xl overflow-hidden shadow-md">
                 <CardContent className="p-6">
                     <div className="flex items-start gap-4">
-                        <div className="h-12 w-12 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-                            <AlertTriangle className="h-6 w-6 text-red-600" />
+                        <div className="h-11 w-11 rounded-2xl bg-red-500/10 flex items-center justify-center flex-shrink-0 border border-red-500/20">
+                            <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />
                         </div>
-                        <div className="space-y-2">
-                            <h3 className="font-bold text-red-900 text-lg">Warning: Permanent Data Deletion</h3>
-                            <p className="text-sm text-red-700 leading-relaxed">
-                                This section contains irreversible operations. Deleted data cannot be recovered. 
-                                Please ensure you have proper backups before proceeding. All deletions are logged for audit purposes.
+                        <div className="space-y-1">
+                            <h4 className="font-black text-red-950 text-xs sm:text-sm uppercase tracking-wider">Critical System Warning: Permanent Purges</h4>
+                            <p className="text-slate-600 text-xs leading-relaxed font-semibold">
+                                Operations listed below bypass standard safety nets to perform direct, unrecoverable cascade DB deletions. 
+                                Please double check your parameters. Deleted records cannot be retrieved. All actions are audited.
                             </p>
                         </div>
                     </div>
                 </CardContent>
             </Card>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Responsive Operations Grid */}
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
                 {dataTypes.map((type) => {
                     const count = summary[type.id as keyof DataSummary] || 0;
                     const Icon = type.icon;
                     return (
-                        <Card key={type.id} className="overflow-hidden border-slate-200/60 shadow-sm hover:shadow-md transition-shadow rounded-2xl">
-                            <CardContent className="p-0">
-                                <div className={`h-2 ${type.color}`} />
-                                <div className="p-6">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className={`h-12 w-12 rounded-xl ${type.color}/10 flex items-center justify-center`}>
-                                            <Icon className={`h-6 w-6 ${type.color.replace('bg-', 'text-')}`} />
+                        <Card key={type.id} className="group overflow-hidden border border-slate-200/80 shadow-xl shadow-slate-100/50 hover:shadow-2xl hover:border-slate-300 transition-all duration-500 rounded-3xl bg-white relative">
+                            {/* Color Bar Accent */}
+                            <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${
+                                type.id === 'users' ? 'from-red-500 to-rose-400' :
+                                type.id === 'courses' ? 'from-orange-500 to-amber-400' :
+                                type.id === 'enrollments' ? 'from-blue-500 to-cyan-400' :
+                                type.id === 'questionBanks' ? 'from-purple-500 to-fuchsia-400' :
+                                type.id === 'exams' ? 'from-indigo-500 to-violet-400' :
+                                'from-green-500 to-emerald-400'
+                            }`} />
+                            
+                            <CardContent className="p-6 flex flex-col justify-between h-full min-h-[220px]">
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <div className={`h-12 w-12 rounded-2xl flex items-center justify-center border transition-all duration-300 group-hover:scale-110 ${
+                                            type.id === 'users' ? 'bg-red-50 border-red-100 text-red-500' :
+                                            type.id === 'courses' ? 'bg-orange-50 border-orange-100 text-orange-500' :
+                                            type.id === 'enrollments' ? 'bg-blue-50 border-blue-100 text-blue-500' :
+                                            type.id === 'questionBanks' ? 'bg-purple-50 border-purple-100 text-purple-500' :
+                                            type.id === 'exams' ? 'bg-indigo-50 border-indigo-100 text-indigo-500' :
+                                            'bg-green-50 border-green-100 text-green-500'
+                                        }`}>
+                                            <Icon className="h-5 w-5" />
                                         </div>
-                                        <Badge variant="secondary" className="bg-slate-100 text-slate-700 font-bold">
-                                            {count as number} records
+                                        <Badge className="bg-slate-100 hover:bg-slate-200 border-none text-slate-700 font-extrabold text-[10px] uppercase tracking-wider py-1 px-3 rounded-lg shadow-sm">
+                                            {count as number} Records
                                         </Badge>
                                     </div>
                                     
-                                    <h3 className="font-bold text-lg text-slate-900 mb-1">{type.label}</h3>
-                                    <p className="text-xs text-slate-500 mb-4">{type.description}</p>
-                                    
-                                    <div className="flex gap-2">
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => handleViewClick(type.id)}
-                                            className="flex-1 h-10 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold text-sm"
-                                        >
-                                            <Eye className="h-4 w-4 mr-2" />
-                                            View
-                                        </Button>
-                                        <Button
-                                            variant="destructive"
-                                            onClick={() => handleDeleteClick(type.id)}
-                                            className="flex-1 h-10 rounded-xl font-semibold text-sm"
-                                            disabled={count === 0}
-                                        >
-                                            <Trash2 className="h-4 w-4 mr-2" />
-                                            Delete
-                                        </Button>
+                                    <div className="space-y-1">
+                                        <h3 className="font-extrabold text-base text-slate-900 group-hover:text-primary transition-colors">{type.label}</h3>
+                                        <p className="text-xs text-slate-500 leading-normal font-medium">{type.description}</p>
                                     </div>
+                                </div>
+                                
+                                <div className="flex gap-3 mt-6">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => handleViewClick(type.id)}
+                                        className="flex-1 h-10 rounded-xl border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50 font-bold text-xs uppercase tracking-wider shadow-sm transition-all"
+                                    >
+                                        <Eye className="h-4 w-4 mr-1.5" />
+                                        View
+                                    </Button>
+                                    <Button
+                                        variant="destructive"
+                                        onClick={() => handleDeleteClick(type.id)}
+                                        className="flex-1 h-10 rounded-xl font-bold text-xs uppercase tracking-wider shadow-sm transition-all bg-red-600 hover:bg-red-700"
+                                        disabled={count === 0}
+                                    >
+                                        <Trash2 className="h-4 w-4 mr-1.5" />
+                                        Delete
+                                    </Button>
                                 </div>
                             </CardContent>
                         </Card>
@@ -368,165 +398,187 @@ export function QualityAssurance({ onSync, loading: parentLoading = false }: Qua
                 })}
             </div>
 
-            <Card className="border-2 border-dashed border-slate-300 bg-slate-50/50">
+            {/* Bottom Status Card */}
+            <Card className="border border-slate-200/80 bg-slate-50/50 rounded-[2rem]">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-                    <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center">
-                        <Database className="h-8 w-8 text-slate-400" />
+                    <div className="h-16 w-16 rounded-2xl bg-white flex items-center justify-center shadow-md border border-slate-100">
+                        <Database className="h-8 w-8 text-primary/45" />
                     </div>
                     <div className="space-y-1">
-                        <p className="text-lg font-bold text-slate-900">Database Summary</p>
-                        <p className="text-sm text-slate-500 max-w-md">
-                            View all data types and their record counts. Use the delete button to permanently remove data.
+                        <p className="text-lg font-black text-slate-900 uppercase italic">Database Infrastructure Summary</p>
+                        <p className="text-xs text-slate-500 max-w-md font-medium">
+                            Central directory mapping core relational tables. Use individual item inspects or batch actions above to regulate storage.
                         </p>
                     </div>
                     <div className="flex flex-wrap justify-center gap-3 mt-4">
                         {dataTypes.map((type) => (
-                            <div key={type.id} className="flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-                                <type.icon className={`h-4 w-4 ${type.color.replace('bg-', 'text-')}`} />
-                                <span className="text-sm font-semibold text-slate-700">
+                            <div key={type.id} className="flex items-center gap-2.5 px-4 py-2 bg-white rounded-xl border border-slate-200/80 shadow-sm transition-all hover:scale-105">
+                                <type.icon className={`h-4 w-4 ${
+                                    type.id === 'users' ? 'text-red-500' :
+                                    type.id === 'courses' ? 'text-orange-500' :
+                                    type.id === 'enrollments' ? 'text-blue-500' :
+                                    type.id === 'questionBanks' ? 'text-purple-500' :
+                                    type.id === 'exams' ? 'text-indigo-500' :
+                                    'text-green-500'
+                                }`} />
+                                <span className="text-xs font-extrabold text-slate-800">
                                     {(summary[type.id as keyof DataSummary] || 0) as number}
                                 </span>
-                                <span className="text-xs text-slate-400">{type.label}</span>
+                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{type.label}</span>
                             </div>
                         ))}
                     </div>
                 </CardContent>
             </Card>
 
+            {/* Elegant Small Deletion Dialog */}
             <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-                <DialogContent className="w-[95vw] sm:max-w-[500px] rounded-2xl sm:rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl">
-                    <div className="bg-red-600 p-8 text-white relative">
-                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+                <DialogContent className="w-[95vw] sm:max-w-[450px] rounded-3xl p-0 overflow-hidden border-none shadow-2xl">
+                    <div className="bg-red-950 p-5 text-white relative flex-shrink-0 border-b border-red-900">
+                        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '16px 16px' }} />
                         
-                        <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-white/30 shadow-xl relative z-10">
-                            <Trash2 className="h-8 w-8 text-white" />
+                        <div className="relative z-10 flex items-center gap-3">
+                            <div className="h-9 w-9 bg-red-900/30 backdrop-blur-md rounded-xl flex items-center justify-center border border-red-500/30 shadow-md">
+                                <Trash2 className="h-4.5 w-4.5 text-red-400" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-sm sm:text-base font-black tracking-wider uppercase text-red-100">
+                                    Confirm Batch Deletion
+                                </DialogTitle>
+                                <DialogDescription className="text-red-350 text-[11px] mt-0.5 font-medium leading-none">
+                                    Permanently purge {(dataTypeLabels[selectedDataType || ''])?.toLowerCase()} registry
+                                </DialogDescription>
+                            </div>
                         </div>
-                        <DialogTitle className="text-2xl font-black tracking-tight relative z-10">
-                            Permanently Delete {dataTypeLabels[selectedDataType || '']}?
-                        </DialogTitle>
-                        <DialogDescription className="text-white/80 mt-2 font-medium relative z-10">
-                            This action will permanently remove all {dataTypeLabels[selectedDataType || '']} data from the database. 
-                            <span className="block mt-2 font-bold text-yellow-200">THIS ACTION CANNOT BE UNDONE!</span>
-                        </DialogDescription>
                     </div>
 
-                    <div className="p-8 space-y-6 bg-white">
-                        <div className="p-4 bg-red-50 rounded-xl border border-red-200 space-y-2">
-                            <div className="flex items-center gap-2 text-red-800 font-bold">
-                                <AlertTriangle className="h-5 w-5" />
-                                <span>Records to be deleted:</span>
+                    <div className="p-6 space-y-6 bg-white">
+                        <div className="p-4 bg-red-50/50 rounded-2xl border border-red-100 space-y-1">
+                            <div className="flex items-center gap-2 text-red-900 text-xs font-black uppercase tracking-wider">
+                                <AlertTriangle className="h-4.5 w-4.5 text-red-600" />
+                                <span>Registry rows to clear:</span>
                             </div>
-                            <p className="text-red-700 font-semibold text-lg">
-                                {(summary[selectedDataType as keyof DataSummary] || 0) as number} {dataTypeLabels[selectedDataType || '']}
+                            <p className="text-red-600 font-extrabold text-2xl tracking-tighter">
+                                {(summary[selectedDataType as keyof DataSummary] || 0) as number} {(dataTypeLabels[selectedDataType || ''])} Records
                             </p>
                         </div>
 
                         <div className="space-y-2">
-                            <Label className="text-sm font-bold text-slate-900 uppercase tracking-widest">
-                                Type "DELETE" to confirm
+                            <Label className="text-[10px] font-black text-slate-800 uppercase tracking-widest">
+                                Type "DELETE" to initiate override
                             </Label>
                             <input
                                 type="text"
                                 value={deleteConfirmText}
                                 onChange={(e) => setDeleteConfirmText(e.target.value)}
-                                placeholder="Type DELETE here"
-                                className="w-full h-12 px-4 rounded-xl border-2 border-red-200 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 font-mono text-lg tracking-wider"
+                                placeholder="DELETE"
+                                className="w-full h-11 px-4 rounded-xl border-2 border-red-100 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/10 font-mono text-base tracking-widest font-black uppercase text-center placeholder:text-slate-300"
                             />
                         </div>
 
-                        <DialogFooter className="flex gap-3">
+                        <DialogFooter className="flex flex-row gap-3 pt-2">
                             <Button
                                 variant="outline"
                                 onClick={() => setShowDeleteDialog(false)}
-                                className="flex-1 h-12 rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+                                className="flex-1 h-11 rounded-xl border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider hover:bg-slate-50"
                             >
                                 Cancel
                             </Button>
                             <Button
                                 onClick={confirmDelete}
                                 disabled={deleteConfirmText !== 'DELETE' || deleting}
-                                className="flex-1 h-12 rounded-xl bg-red-600 hover:bg-red-700 shadow-lg font-bold"
+                                className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 shadow-lg shadow-red-600/20 font-bold text-xs uppercase tracking-wider text-white"
                             >
                                 {deleting ? (
                                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                 ) : (
                                     <Trash2 className="h-4 w-4 mr-2" />
                                 )}
-                                Permanently Delete
+                                Confirm Purge
                             </Button>
                         </DialogFooter>
                     </div>
                 </DialogContent>
             </Dialog>
 
+            {/* Elegant Modern Custom View Dialog */}
             <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
-                <DialogContent className="w-[95vw] sm:max-w-[700px] rounded-2xl sm:rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl max-h-[80vh] flex flex-col">
-                    <div className="bg-primary p-8 text-white relative flex-shrink-0">
-                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+                <DialogContent className="w-[95vw] sm:max-w-[650px] rounded-3xl p-0 overflow-hidden border-none shadow-2xl max-h-[85vh] flex flex-col">
+                    {/* Header: Fixed Small, Sleek Styling */}
+                    <div className="bg-slate-900 p-5 text-white relative flex-shrink-0 border-b border-slate-800">
+                        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.1) 1px, transparent 0)', backgroundSize: '16px 16px' }} />
                         
-                        <div className="h-16 w-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-white/30 shadow-xl relative z-10">
-                            <Eye className="h-8 w-8 text-white" />
+                        <div className="relative z-10 flex items-center gap-3">
+                            <div className="h-9 w-9 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700 shadow-md">
+                                <Eye className="h-4.5 w-4.5 text-blue-400" />
+                            </div>
+                            <div>
+                                <DialogTitle className="text-base font-black tracking-wider uppercase text-white flex items-center gap-2">
+                                    {dataTypeLabels[viewingDataType || '']} <span className="text-blue-400 text-[9px] font-black py-0.5 px-2 bg-blue-500/10 rounded-md tracking-wider uppercase border border-blue-500/20">Audit Portal</span>
+                                </DialogTitle>
+                                <DialogDescription className="text-slate-300 text-[11px] mt-0.5 font-medium leading-none">
+                                    Displaying database entries. Total matched: <span className="text-white font-extrabold font-mono">{(summary[viewingDataType as keyof DataSummary] || 0) as number}</span>
+                                </DialogDescription>
+                            </div>
                         </div>
-                        <DialogTitle className="text-2xl font-black tracking-tight relative z-10">
-                            {dataTypeLabels[viewingDataType || '']} Data
-                        </DialogTitle>
-                        <DialogDescription className="text-white/80 mt-2 font-medium relative z-10">
-                            Showing first 50 records. Total: {(summary[viewingDataType as keyof DataSummary] || 0) as number}
-                        </DialogDescription>
                     </div>
 
-                    <div className="p-6 bg-white flex-1 overflow-hidden">
+                    {/* Content Section */}
+                    <div className="p-6 bg-white flex-1 overflow-hidden min-h-[300px] flex flex-col">
                         {loadingData ? (
-                            <div className="flex items-center justify-center py-12">
+                            <div className="flex-1 flex flex-col items-center justify-center gap-3">
                                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                                <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider animate-pulse">Running audits...</p>
                             </div>
                         ) : dataList.length === 0 ? (
-                            <div className="text-center py-12 space-y-3">
-                                <div className="h-16 w-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
-                                    <CheckCircle className="h-8 w-8 text-slate-300" />
+                            <div className="flex-1 flex flex-col items-center justify-center text-center py-12 space-y-3">
+                                <div className="h-14 w-14 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 shadow-inner">
+                                    <CheckCircle className="h-6 w-6 text-slate-300" />
                                 </div>
-                                <p className="text-slate-600 font-semibold">No data found</p>
-                                <p className="text-slate-400 text-sm">This data type has no records.</p>
+                                <div className="space-y-1">
+                                    <p className="text-slate-800 font-extrabold text-sm uppercase tracking-wider">No Registry Match</p>
+                                    <p className="text-slate-400 text-xs font-medium">This database collection contains 0 items.</p>
+                                </div>
                             </div>
                         ) : (
-                            <ScrollArea className="h-[400px] pr-4">
-                                <div className="space-y-2">
-                                    {dataList.map((item, idx) => (
-                                        <div key={item.id || item._id || idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                                <span className="text-xs font-bold text-primary">{idx + 1}</span>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-semibold text-slate-900 truncate">
-                                                    {getDisplayValue(item, viewingDataType || '')}
-                                                </p>
-                                                <p className="text-xs text-slate-500 truncate">
-                                                    ID: {getItemId(item, viewingDataType || '')}
-                                                </p>
-                                            </div>
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="h-8 w-8 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                                                onClick={() => handleIndividualDelete(item)}
-                                                title="Permanently Delete Record"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                            /* Fixed Standard Scroll Container: Guarantees 100% visible scrollbar & handles all members */
+                            <div className="flex-grow h-[400px] sm:h-[450px] overflow-y-auto pr-2 space-y-2.5 custom-scrollbar">
+                                {dataList.map((item, idx) => (
+                                    <div key={item.id || item._id || idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100/70 hover:border-slate-200 hover:bg-slate-100/35 transition-all duration-300">
+                                        <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/5">
+                                            <span className="text-xs font-black text-primary">{idx + 1}</span>
                                         </div>
-                                    ))}
-                                </div>
-                            </ScrollArea>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-extrabold text-xs text-slate-900 truncate uppercase tracking-tight">
+                                                {getDisplayValue(item, viewingDataType || '')}
+                                            </p>
+                                            <p className="text-[10px] text-slate-400 truncate font-semibold font-mono mt-0.5">
+                                                UUID: {getItemId(item, viewingDataType || '')}
+                                            </p>
+                                        </div>
+                                        <Button 
+                                            variant="ghost" 
+                                            size="icon" 
+                                            className="h-9 w-9 rounded-xl text-slate-300 hover:text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 transition-all flex-shrink-0"
+                                            onClick={() => handleIndividualDelete(item)}
+                                            title="Permanently Delete Record"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </div>
 
-                    <div className="p-6 bg-slate-50 border-t border-slate-100 flex-shrink-0">
+                    {/* Footer Section */}
+                    <div className="p-5 bg-slate-50 border-t border-slate-100 flex-shrink-0">
                         <Button
                             variant="outline"
                             onClick={() => setShowViewDialog(false)}
-                            className="w-full h-12 rounded-xl border-slate-200 text-slate-600 font-bold hover:bg-slate-50"
+                            className="w-full h-11 rounded-xl border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider hover:bg-slate-50 transition-all"
                         >
-                            Close
+                            Close Audit Portal
                         </Button>
                     </div>
                 </DialogContent>
