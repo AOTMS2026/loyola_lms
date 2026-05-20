@@ -194,6 +194,7 @@ interface AnimatedCharactersLoginProps {
   isTyping?: boolean;
   children?: React.ReactNode;
   logo?: string;
+  overlay?: React.ReactNode;
 }
 
 interface FloatingIconProps {
@@ -236,6 +237,7 @@ export function AnimatedCharactersLogin({
   isTyping = false,
   children,
   logo,
+  overlay,
 }: AnimatedCharactersLoginProps) {
   const [mouseX, setMouseX] = useState<number>(0);
   const [mouseY, setMouseY] = useState<number>(0);
@@ -999,6 +1001,7 @@ export function AnimatedCharactersLogin({
         </div>
         <div className="w-full max-w-[420px] relative z-20">{children}</div>
       </div>
+      {overlay}
     </div>
   );
 }

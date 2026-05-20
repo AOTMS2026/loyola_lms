@@ -299,6 +299,7 @@ export default function AdminDashboard() {
     updateEnrollmentPayment,
     deleteEnrollment: _deleteEnrollment,
     resetStudentATS: _resetStudentATS,
+    deleteUser,
   } = adminData;
 
   const { socket } = useSocket();
@@ -804,6 +805,7 @@ export default function AdminDashboard() {
                       onUpdateStatus={updateUserStatus}
                       onUpdateRole={updateUserRole}
                       onSendEmail={sendApprovalEmail}
+                      onDeleteUser={deleteUser}
                       onUpdateEnrollmentStatus={async (id, status) => { await _updateEnrollmentStatus(id, status); }}
                       onResetATS={async (userId) => { await _resetStudentATS(userId); }}
                     />

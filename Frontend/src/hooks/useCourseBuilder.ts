@@ -25,6 +25,7 @@ export interface S3CourseVideo {
     thumbnail_url?: string;
     is_published?: boolean;
     order_index: number;
+    release_day?: number;
     allowed_batches?: string[];
     batch_type?: string;
     created_at: string;
@@ -166,7 +167,7 @@ export function useCreateCourseVideo() {
     const queryClient = useQueryClient();
 
     return useMutation({
-        mutationFn: async ({ moduleId, courseId, ...video }: { moduleId: string, courseId?: string, title: string, video_type: string, video_url?: string, drive_link?: string, thumbnail_url?: string, order_index: number, allowed_batches?: string[], batch_type?: string }) => {
+        mutationFn: async ({ moduleId, courseId, ...video }: { moduleId: string, courseId?: string, title: string, video_type: string, video_url?: string, drive_link?: string, thumbnail_url?: string, order_index: number, release_day?: number, allowed_batches?: string[], batch_type?: string }) => {
             // Prefer the course sub-resource endpoint if courseId is provided
             // Prefer the generic data endpoint as it's more standard now
             if (courseId) {

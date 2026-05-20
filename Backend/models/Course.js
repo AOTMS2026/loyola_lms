@@ -108,7 +108,12 @@ const VideoSchema = new Schema({
     // Batch access control: empty = visible to all enrolled students
     allowed_batches: [{ type: Schema.Types.Mixed, ref: 'Batch' }],
     batch_type: { type: String }, // e.g., 'morning', 'afternoon', 'evening'
-    unlock_after_days: { type: Number, default: 1 }, // Optional video-level drip
+    unlock_after_days: { type: Number, default: 1 }, // legacy, kept for compatibility
+    // ── Drip Release System ──────────────────────────────────────────────────
+    // release_day = 1 → unlocks on student's join date (Day 1)
+    // release_day = 2 → unlocks on Day 2 (join_date + 1 day)
+    // release_day = N → unlocks on Day N (join_date + N-1 days)
+    release_day: { type: Number, default: 1 },
     instructor_id: { type: Schema.Types.ObjectId, ref: 'User' },
     created_at: { type: Date, default: Date.now }
 });

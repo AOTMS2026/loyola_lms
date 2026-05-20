@@ -71,6 +71,23 @@ const ALLOWED_TABLES = Object.keys(MODEL_MAP);
 const ADMIN_ONLY_TABLES = ['user_roles', 'system_logs', 'security_events'];
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me';
+
+// ── Token Blacklist (in-memory, auto-cleaned every 8 hours) ──
+const tokenBlacklist = new Set();
+setInterval(() => {
+    // JWT tokens expire in 7d, clean up every 8h to keep memory small
+    // We store jti or full token; cleaning all is safe since JWT expiry handles the rest
+    tokenBlacklist.clear();
+    console.log('[Auth] Token blacklist cleared (scheduled cleanup)');
+}, 8 * 60 * 60 * 1000);
+
+const blacklistUserTokens = (userId) => {
+    // We store a marker so authenticateToken can check user-level revocation
+    tokenBlacklist.add(`user:${userId.toString()}`);
+    // Also clear role cache so stale roles don't linger
+    roleCache.delete(userId.toString());
+    console.log(`[Auth] Tokens revoked for user ${userId}`);
+};
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -242,17 +259,38 @@ const generateToken = (user) => {
     );
 };
 
-const authenticateToken = (req, res, next) => {
+const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) return res.status(401).json({ error: 'Auth token required' });
 
-    jwt.verify(token, JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(401).json({ error: 'Invalid or expired token' });
-        req.user = decoded;
-        next();
-    });
+    let decoded;
+    try {
+        decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    // Check if this user's tokens have been revoked (e.g., after account deletion)
+    if (tokenBlacklist.has(`user:${decoded.id.toString()}`)) {
+        return res.status(401).json({ error: 'Session revoked. Please log in again.' });
+    }
+
+    // Verify user still exists in DB (handles deleted-but-cached users)
+    try {
+        const userExists = await User.exists({ _id: decoded.id });
+        if (!userExists) {
+            console.warn(`[Auth] Token valid but user ${decoded.id} not found in DB — rejecting`);
+            return res.status(401).json({ error: 'Account no longer exists. Please contact support.' });
+        }
+    } catch (dbErr) {
+        // If DB check fails (e.g., connection issue), let the request through to avoid lockout
+        console.error('[Auth] DB user-existence check failed, skipping:', dbErr.message);
+    }
+
+    req.user = decoded;
+    next();
 };
 
 // Role Caching (Simple In-Memory for now, similar to previous version)
@@ -823,6 +861,104 @@ app.post('/api/auth/logout', (req, res) => {
     res.json({ success: true, message: 'Logged out successfully' });
 });
 
+// ── Forgot Password Routes ─────────────────────────────────────────────────
+// In-memory OTP store: { email -> { otp, expiresAt } }
+const resetOtpStore = new Map();
+
+// Step 1: Generate OTP, send via n8n, store for verification
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        if (!email) return res.status(400).json({ error: 'Email is required' });
+
+        // Check user exists case-insensitively
+        const user = await User.findOne({ email: { $regex: new RegExp("^" + email.trim() + "$", "i") } });
+        if (!user) return res.status(404).json({ error: 'No account found with this email.' });
+
+        // Generate random 6-digit OTP
+        const otp = String(Math.floor(100000 + Math.random() * 900000));
+        const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+        // Store OTP (store as lowercase email in key for consistency)
+        resetOtpStore.set(email.toLowerCase().trim(), { otp, expiresAt });
+        setTimeout(() => resetOtpStore.delete(email.toLowerCase().trim()), 10 * 60 * 1000);
+
+        // Call n8n webhook — it emails the OTP to the user
+        try {
+            await fetch('https://aotms.app.n8n.cloud/webhook/Email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: email.toLowerCase().trim(),
+                    otp,
+                    name: user.full_name || 'User',
+                    type: 'forgot_password'
+                })
+            });
+        } catch (n8nErr) {
+            console.error('[ForgotPassword] n8n webhook failed:', n8nErr.message);
+            // Don't fail — OTP is stored, but email may not be sent
+        }
+
+        console.log(`[ForgotPassword] OTP ${otp} generated for ${email}`);
+        res.json({ success: true, message: 'OTP sent to your email.' });
+    } catch (err) {
+        handleError(res, err, 'forgot-password');
+    }
+});
+
+// Step 2: Verify OTP entered by user
+app.post('/api/auth/verify-reset-otp', async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+        if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+
+        const record = resetOtpStore.get(email.toLowerCase().trim());
+        if (!record) return res.status(400).json({ error: 'OTP expired or not found. Request a new one.' });
+        if (Date.now() > record.expiresAt) {
+            resetOtpStore.delete(email.toLowerCase().trim());
+            return res.status(400).json({ error: 'OTP has expired. Request a new one.' });
+        }
+        if (String(otp).trim() !== record.otp) {
+            return res.status(400).json({ error: 'Invalid OTP. Please check and try again.' });
+        }
+
+        console.log(`[ForgotPassword] OTP verified for ${email}`);
+        res.json({ success: true, message: 'OTP verified' });
+    } catch (err) {
+        handleError(res, err, 'verify-reset-otp');
+    }
+});
+
+// Step 3: Reset password after OTP verified
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { email, otp, new_password } = req.body;
+        if (!email || !otp || !new_password) return res.status(400).json({ error: 'All fields required' });
+        if (new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+        // Re-verify OTP for security
+        const record = resetOtpStore.get(email.toLowerCase().trim());
+        if (!record || Date.now() > record.expiresAt || String(otp).trim() !== record.otp) {
+            return res.status(400).json({ error: 'OTP invalid or expired. Please restart the reset process.' });
+        }
+
+        // Find user case-insensitively
+        const user = await User.findOne({ email: { $regex: new RegExp("^" + email.trim() + "$", "i") } });
+        if (!user) return res.status(404).json({ error: 'No account found with this email.' });
+
+        const salt = await bcrypt.genSalt(10);
+        user.password_hash = await bcrypt.hash(new_password, salt);
+        await user.save();
+
+        resetOtpStore.delete(email.toLowerCase().trim());
+        console.log(`[ForgotPassword] Password reset successful for ${email}`);
+        res.json({ success: true, message: 'Password reset successfully. You can now login.' });
+    } catch (err) {
+        handleError(res, err, 'reset-password');
+    }
+});
+
 app.post('/api/auth/refresh', async (req, res) => {
     const { refresh_token } = req.body;
     if (!refresh_token) return res.status(400).json({ error: 'Refresh token required' });
@@ -914,7 +1050,7 @@ app.post('/api/auth/signup', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: { $regex: new RegExp("^" + email.trim() + "$", "i") } });
         const loginIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
         if (!user) {
@@ -1940,22 +2076,106 @@ app.get('/api/admin/lookup-user/:userId', authenticateToken, requireAdminOrManag
 app.delete('/api/admin/delete-user/:userId', authenticateToken, requireAdmin, async (req, res) => {
     const { userId } = req.params;
     try {
-        // Unassign courses (set to draft so they don't appear without instructor)
+        // 1. Immediately revoke all active tokens for this user
+        blacklistUserTokens(userId);
+
+        // 2. Unassign courses (set to draft so they don't appear without instructor)
+        await Course.updateMany(
+            { instructor_ids: userId },
+            { $pull: { instructor_ids: userId }, status: 'draft' }
+        );
         await Course.updateMany(
             { instructor_id: userId },
-            { $unset: { instructor_id: "" }, status: 'draft' }
+            { $unset: { instructor_id: '' }, status: 'draft' }
         );
 
-        // Delete User Data
+        // 3. Cascade delete ALL user-related data
         await Promise.all([
             User.findByIdAndDelete(userId),
             Profile.findOneAndDelete({ user_id: userId }),
-            UserRole.findOneAndDelete({ user_id: userId })
+            UserRole.findOneAndDelete({ user_id: userId }),
+            Enrollment.deleteMany({ user_id: userId }),
+            ExamResult.deleteMany({ user_id: userId }),
+            StudentExamAccess.deleteMany({ student_id: userId }),
+            StudentBatch.deleteMany({ student_id: userId }),
+            Notification.deleteMany({ user_id: userId }),
+            Attendance.deleteMany({ user_id: userId }),
+            ResumeScan.deleteMany({ user_id: userId }),
+            Message.deleteMany({ sender: userId }),
         ]);
 
-        res.json({ message: 'User deleted successfully' });
+        // 4. Log the deletion
+        await SystemLog.create({
+            log_type: 'audit',
+            module: 'UserManagement',
+            action: 'User Deleted',
+            details: { deleted_user_id: userId, deleted_by: req.user.id },
+            user_id: req.user.id
+        });
+
+        console.log(`[Admin] User ${userId} permanently deleted by ${req.user.id}`);
+        res.json({ message: 'User deleted successfully. All associated data removed.' });
     } catch (err) {
         handleError(res, err, 'delete-user');
+    }
+});
+
+// Admin: Get all users cross-validated with User collection (no ghost/orphan profiles)
+app.get('/api/admin/users', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        // Fetch all User IDs that actually exist in the users collection
+        const existingUsers = await User.find({}).select('_id email full_name avatar_url created_at').lean();
+        const existingUserIds = new Set(existingUsers.map(u => u._id.toString()));
+
+        // Fetch profiles only for users that still exist in the User collection
+        const profiles = await Profile.find({
+            user_id: { $in: Array.from(existingUserIds).map(id => new mongoose.Types.ObjectId(id)) }
+        }).lean();
+
+        // Fetch roles for existing users
+        const roles = await UserRole.find({
+            user_id: { $in: Array.from(existingUserIds).map(id => new mongoose.Types.ObjectId(id)) }
+        }).lean();
+
+        const profileMap = profiles.reduce((acc, p) => { acc[p.user_id.toString()] = p; return acc; }, {});
+        const roleMap = roles.reduce((acc, r) => { acc[r.user_id.toString()] = r.role; return acc; }, {});
+
+        const result = existingUsers.map(user => {
+            const userId = user._id.toString();
+            const profile = profileMap[userId] || {};
+            const role = roleMap[userId] || 'student';
+            const approvalStatus = profile.approval_status || 'pending';
+
+            return {
+                id: userId,
+                user_id: userId,
+                full_name: user.full_name || profile.full_name || null,
+                email: user.email || profile.email || null,
+                avatar_url: user.avatar_url || profile.avatar_url || null,
+                mobile_number: profile.mobile_number || null,
+                role,
+                approval_status: approvalStatus,
+                status: approvalStatus === 'suspended' ? 'suspended' : 'active',
+                suspended_until: profile.suspended_until || null,
+                last_active_at: profile.last_active_at || null,
+                created_at: user.created_at || profile.created_at,
+                city: profile.city || null,
+                district: profile.district || null,
+                country: profile.country || null,
+                full_address: profile.full_address || null,
+                latitude: profile.latitude || null,
+                longitude: profile.longitude || null,
+                college_name: profile.college_name || null,
+                institute_name: profile.institute_name || null,
+            };
+        });
+
+        // Sort: newest first
+        result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+        res.json(result);
+    } catch (err) {
+        handleError(res, err, 'admin-get-users');
     }
 });
 
@@ -5521,6 +5741,58 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
                         ]
                     };
                     contentFilter = { $and: [enrollmentFilter, batchFilter] };
+                }
+
+                // ── Sequential Drip Release System ───────────────────────────────────────
+                // RULE: Student sees video only if release_day <= days_passed + 1
+                // days_passed = floor((today - enrolled_at) / 86400000)
+                // Day 1 (join day)  → videos with release_day = 1 ✅
+                // Day 2 (next day)  → release_day 1 AND 2 ✅
+                // Day N             → release_day 1..N ✅
+                // Future            → release_day > N ❌ (locked)
+                if (table === 'course_videos') {
+                    const queriedCourseId = query['course_id'] 
+                        || (query['$and'] && query['$and'].find(q => q['course_id'])?.['course_id']);
+
+                    let enrolledAt = null;
+                    if (queriedCourseId) {
+                        const enrollment = await Enrollment.findOne({
+                            user_id: req.user.id,
+                            course_id: queriedCourseId,
+                            status: 'active'
+                        }).select('enrolled_at').lean();
+                        enrolledAt = enrollment?.enrolled_at;
+                    } else if (enrollments.length === 1) {
+                        const singleEnrollment = await Enrollment.findOne({
+                            user_id: req.user.id,
+                            status: 'active'
+                        }).select('enrolled_at').lean();
+                        enrolledAt = singleEnrollment?.enrolled_at;
+                    }
+
+                    if (enrolledAt) {
+                        const enrolledDate = new Date(enrolledAt);
+                        const today = new Date();
+                        // Set both to midnight for clean day counting
+                        enrolledDate.setHours(0, 0, 0, 0);
+                        today.setHours(0, 0, 0, 0);
+                        const daysPassed = Math.floor((today - enrolledDate) / (1000 * 60 * 60 * 24));
+                        const maxReleaseDay = daysPassed + 1; // Day 1 on join date
+
+                        console.log(`[DRIP] Student ${req.user.id} | Enrolled: ${enrolledDate.toDateString()} | Days passed: ${daysPassed} | Max release day: ${maxReleaseDay}`);
+
+                        // Show videos where:
+                        // 1. release_day <= maxReleaseDay (unlocked sequential videos)
+                        // 2. OR release_day is not set (legacy videos default to Day 1)
+                        const dripFilter = {
+                            $or: [
+                                { release_day: { $lte: maxReleaseDay } },
+                                { release_day: { $exists: false } },
+                                { release_day: null }
+                            ]
+                        };
+                        contentFilter = { $and: [contentFilter, dripFilter] };
+                    }
                 }
 
                 // Apply final filter

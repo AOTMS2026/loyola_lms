@@ -103,9 +103,9 @@ import { useToast } from "@/components/ui/use-toast";
 // ─── Shared Components ────────────────────────────────────────────────────────
 
 function CoursesTab() {
-  const [viewingCourse, setViewingCourse] = useState<StudentCourse | null>(null);
   const [courseTab, setCourseTab] = useState<'enrolled' | 'available'>('enrolled');
   const { toast } = useToast();
+  const navigate = useNavigate();
   const enrollMutation = useEnrollCourse();
 
   // Payment Modal States
@@ -163,15 +163,7 @@ function CoursesTab() {
     }
   }, [batches, selectedBatchId]);
 
-  if (viewingCourse) {
-    return (
-      <StudentCourseViewer
-        course={viewingCourse}
-        isEnrolled={viewingCourse.enrollmentStatus === 'active'}
-        onBack={() => setViewingCourse(null)}
-      />
-    );
-  }
+  // Courses now navigate directly to Video Library — no intermediate viewer
 
   // Hooks are already declared at the top of CoursesTab
 
@@ -516,7 +508,8 @@ function CoursesTab() {
                  }
               }
               
-              setViewingCourse(c);
+              // Navigate to Video Library with this course pre-selected
+              navigate('/student-dashboard/videos', { state: { courseId: c.id } });
             }}
           />
         ) : (

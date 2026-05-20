@@ -181,28 +181,19 @@ export function useAdminData(userRole?: string | null) {
               });
             }
           }),
-        fetchWithAuth('/data/profiles?sort=created_at&order=desc&limit=100')
-          .then(async (profilesData) => {
-            const rolesData = await fetchWithAuth('/data/user_roles?limit=500');
-            if (profilesData && rolesData) {
-              const rolesMap = (rolesData as UserRole[]).reduce((acc, r) => {
-                acc[r.user_id] = r.role;
-                return acc;
-              }, {} as Record<string, string>);
-
-              const mergedProfiles = (profilesData as Profile[]).map(p => {
-                const approval_status = p.approval_status || 'pending';
-                return {
-                  ...p,
-                  role: rolesMap[p.id] || 'student',
-                  approval_status,
-                  // Sync status for UI components that rely on status field
-                  status: approval_status === 'suspended' ? 'suspended' : 'active'
-                };
-              });
-
-              setProfiles(mergedProfiles as Profile[]);
-              setUserRoles(rolesData as UserRole[]);
+        // Use the new cross-validated endpoint — no ghost users from orphaned profiles
+        fetchWithAuth('/admin/users')
+          .then((usersData) => {
+            if (usersData) {
+              setProfiles(usersData as Profile[]);
+              // Build userRoles array from the merged data for compatibility
+              const rolesArray = (usersData as Profile[]).map(u => ({
+                id: u.id,
+                user_id: u.id,
+                role: (u.role || 'student') as UserRole['role'],
+                created_at: u.created_at
+              }));
+              setUserRoles(rolesArray);
             }
           }),
         fetchWithAuth('/data/courses?sort=created_at&order=desc&limit=200')
@@ -494,6 +485,25 @@ export function useAdminData(userRole?: string | null) {
     }
   };
 
+  const deleteUser = async (userId: string) => {
+    const previousProfiles = [...profiles];
+    // Optimistically remove from UI immediately
+    setProfiles(prev => prev.filter(p => p.id !== userId));
+
+    try {
+      await fetchWithAuth(`/admin/delete-user/${userId}`, { method: 'DELETE' });
+      toast({ title: 'User Deleted', description: 'User and all associated data have been permanently removed.' });
+      // Refresh to sync stats
+      fetchAllData();
+      return true;
+    } catch (error) {
+      // Rollback if delete failed
+      setProfiles(previousProfiles);
+      toast({ title: 'Error', description: 'Failed to delete user. Please try again.', variant: 'destructive' });
+      return false;
+    }
+  };
+
   return {
     loading,
     profiles,
@@ -517,7 +527,8 @@ export function useAdminData(userRole?: string | null) {
     updateCoursePrice,
     deleteExamResult,
     toggleCourseActive,
-    resetStudentATS
+    resetStudentATS,
+    deleteUser
   };
 }
 

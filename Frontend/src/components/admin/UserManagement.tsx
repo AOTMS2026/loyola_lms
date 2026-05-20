@@ -60,7 +60,8 @@ import {
   ImageOff,
   Zap,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -132,6 +133,7 @@ interface UserManagementProps {
   onSendEmail: (userId: string) => Promise<boolean>;
   onUpdateEnrollmentStatus?: (id: string, status: "rejected" | "active") => Promise<void>;
   onResetATS?: (userId: string) => Promise<void>;
+  onDeleteUser?: (userId: string) => Promise<boolean>;
   onSync?: () => void;
 }
 
@@ -144,6 +146,7 @@ export function UserManagement({
   onSendEmail,
   onUpdateEnrollmentStatus,
   onResetATS,
+  onDeleteUser,
   onSync,
 }: UserManagementProps) {
 
@@ -158,6 +161,7 @@ export function UserManagement({
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [showSuspendDialog, setShowSuspendDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [suspensionDays, setSuspensionDays] = useState("7");
   
   interface PendingEnrollment {
@@ -611,6 +615,20 @@ export function UserManagement({
                             }} className="rounded-xl font-bold text-[13px] py-2.5 text-rose-600 bg-rose-50/50 cursor-pointer">
                               <Lock className="mr-3 h-4 w-4" /> Suspend Access
                             </DropdownMenuItem>
+                          )}
+                          {onDeleteUser && (
+                            <>
+                              <DropdownMenuSeparator className="my-1.5 bg-rose-100" />
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setSelectedUser(user);
+                                  setShowDeleteDialog(true);
+                                }}
+                                className="rounded-xl font-bold text-[13px] py-2.5 text-rose-700 bg-rose-50 cursor-pointer hover:bg-rose-100"
+                              >
+                                <Trash2 className="mr-3 h-4 w-4" /> Delete User Permanently
+                              </DropdownMenuItem>
+                            </>
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -1317,6 +1335,59 @@ export function UserManagement({
                 disabled={isProcessing}
             >
                 {isProcessing ? "Processing..." : "Confirm Suspension"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-md rounded-2xl border-rose-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <Trash2 className="h-5 w-5" />
+              Permanently Delete User
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              This action <span className="font-black text-rose-600">cannot be undone</span>. All data including enrollments, exam results, messages, and attendance records will be permanently erased.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3">
+            <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 space-y-2">
+              <p className="text-sm font-bold text-rose-800">User to be deleted:</p>
+              <p className="text-base font-black text-rose-900">{selectedUser?.full_name || 'Unknown User'}</p>
+              <p className="text-xs text-rose-600 font-medium">{selectedUser?.email}</p>
+            </div>
+            <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">What gets deleted:</p>
+              <ul className="text-xs text-slate-500 mt-1 space-y-0.5 font-medium">
+                <li>• User account &amp; profile</li>
+                <li>• All course enrollments</li>
+                <li>• All exam results &amp; submissions</li>
+                <li>• All messages &amp; chat history</li>
+                <li>• Attendance &amp; ATS records</li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)} className="rounded-xl">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="rounded-xl bg-rose-600 hover:bg-rose-700"
+              disabled={isProcessing}
+              onClick={async () => {
+                if (selectedUser && onDeleteUser) {
+                  setIsProcessing(true);
+                  await onDeleteUser(selectedUser.id);
+                  setIsProcessing(false);
+                  setShowDeleteDialog(false);
+                  setSelectedUser(null);
+                }
+              }}
+            >
+              {isProcessing ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Deleting...</> : <><Trash2 className="mr-2 h-4 w-4" /> Yes, Delete Permanently</>}
             </Button>
           </DialogFooter>
         </DialogContent>
