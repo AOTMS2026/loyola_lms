@@ -739,10 +739,23 @@ export function StudentPerformance({
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 pt-1">
-                               <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-600 border-none font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-widest transition-colors">
-                                  {sv(stu.college_name).toUpperCase()}
-                               </Badge>
+                            <div className="flex items-center gap-2 pt-1 flex-wrap">
+                              {stu.college_name && stu.college_name.trim() !== "" && stu.college_name !== "—" && (
+                                 <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-600 border-none font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-widest transition-colors">
+                                    {stu.college_name.toUpperCase()}
+                                 </Badge>
+                              )}
+                              {stu.institute_name && stu.institute_name.trim() !== "" && stu.institute_name !== "—" && (
+                                 <Badge className="bg-slate-900 hover:bg-slate-800 text-white border-none font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-widest transition-colors">
+                                    {stu.institute_name.toUpperCase()}
+                                 </Badge>
+                              )}
+                              {(!stu.college_name || stu.college_name.trim() === "" || stu.college_name === "—") && 
+                               (!stu.institute_name || stu.institute_name.trim() === "" || stu.institute_name === "—") && (
+                                 <Badge className="bg-slate-100 hover:bg-slate-200 text-slate-400 border-none font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-widest transition-colors">
+                                    —
+                                 </Badge>
+                              )}
                             </div>
                           </div>
                         </div>
