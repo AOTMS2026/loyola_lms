@@ -16,6 +16,7 @@ import { ManagerVideoLibrary } from "@/components/manager/ManagerVideoLibrary";
 import { AllCoursesList } from "@/components/admin/AllCoursesList";
 import { UserManagement } from "@/components/admin/UserManagement";
 import { QuestionBankApproval } from "@/components/admin/QuestionBankApproval";
+import SubmissionsGrading from "@/components/admin/SubmissionsGrading";
 
 import { CourseBuilder } from "@/components/instructor/courses/CourseBuilder";
 import { Course as CatalogCourse, CourseEnrollment } from "@/hooks/useCourses";
@@ -224,7 +225,7 @@ export default function ManagerDashboard() {
     if (path && path !== "manager") {
       setActiveSection(path);
     } else {
-      setActiveSection("overview");
+      setActiveSection("users");
     }
   }, [location.pathname]);
 
@@ -273,9 +274,10 @@ export default function ManagerDashboard() {
 
   const navTabs = [
     { id: "users",               title: "User Management",     url: "/manager/users",                icon: Users },
-    { id: "student-performance", title: "Student Performance", url: "/manager/student-performance", icon: BarChart3 },
+    { id: "student-performance", title: "Academic Scores",     url: "/manager/student-performance",  icon: BarChart3 },
     { id: "instructors",         title: "Instructors",         url: "/manager/instructors",         icon: Users },
     { id: "enrollments",         title: "Enrollments Hub",     url: "/manager/enrollments",         icon: DbIcon },
+    { id: "submissions-grading", title: "Submissions Grading", url: "/manager/submissions-grading", icon: ClipboardList },
 
     { id: "coupons",             title: "Rewards & Coupons",   url: "/manager/coupons",             icon: Trophy },
     { id: "grant-access",        title: "Grant Access",        url: "/manager/grant-access",        icon: KeyRound },
@@ -385,6 +387,8 @@ export default function ManagerDashboard() {
         return <ResumeScanHistory />;
       case "instructor-access":
         return <InstructorAccessAdmin />;
+      case "submissions-grading":
+        return <SubmissionsGrading />;
       case "enrollments":
         return (
           <EnrollmentsList 

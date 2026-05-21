@@ -295,18 +295,10 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
     };
 
     if (filterType === "college") {
-      const colName = getCollegeName(s.college_name);
-      if (filterValue === "") {
-        return matchesSearch && !!colName;
-      }
-      return matchesSearch && colName === filterValue;
+      return matchesSearch && getCollegeName(s.college_name) === filterValue;
     }
     if (filterType === "institute") {
-      const instName = getCollegeName(s.institute_name);
-      if (filterValue === "") {
-        return matchesSearch && !!instName;
-      }
-      return matchesSearch && instName === filterValue;
+      return matchesSearch && getCollegeName(s.institute_name) === filterValue;
     }
     return matchesSearch;
   });
@@ -371,7 +363,11 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
             <Badge variant="secondary" className="px-3 py-1 bg-primary/5 text-primary border-none font-bold">
                 {students.length} Active Students
             </Badge>
-           
+            <SyncDataButton 
+                onSync={() => refreshAllData(true)} 
+                isLoading={loading} 
+                className="h-10 px-4"
+            />
         </div>
       </div>
 
@@ -411,10 +407,10 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                     </div>
 
                     <div className="flex flex-col gap-4">
-                        {/* Filter controls - responsive layout */}
-                        <div className="flex flex-col sm:flex-row sm:items-center flex-wrap gap-3">
+                        {/* Row 1: Filter controls - always single line */}
+                        <div className="flex flex-wrap items-center gap-3">
                             {/* Filter Type Dropdown */}
-                            <div className="h-11 flex items-center gap-2 bg-white pl-3 pr-2 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-[180px] shrink-0">
+                            <div className="flex-shrink-0 flex items-center gap-2 bg-white pl-3 pr-2 py-2 rounded-2xl border border-slate-200 shadow-sm min-w-0">
                                 <Filter className="h-3.5 w-3.5 text-slate-400" />
                                 <div className="w-px h-4 bg-slate-200 flex-shrink-0" />
                                 <select 
@@ -425,7 +421,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         setSelectedStudent(null);
                                         setSelectedBulkUserIds([]);
                                     }}
-                                    className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-700 focus:ring-0 outline-none uppercase tracking-wider cursor-pointer pr-4 whitespace-nowrap h-full"
+                                    className="bg-transparent border-none text-[11px] font-black text-slate-700 focus:ring-0 outline-none uppercase tracking-wider cursor-pointer pr-1 whitespace-nowrap"
                                 >
                                     <option value="all">All Students</option>
                                     <option value="college">College Wise</option>
@@ -435,7 +431,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
 
                             {/* College / Institute Dropdown */}
                             {filterType !== "all" && (
-                                <div className="h-11 flex-1 min-w-[240px] flex items-center gap-2 bg-white pl-3 pr-2 rounded-2xl border border-primary/30 shadow-sm animate-in slide-in-from-right-4 w-full">
+                                <div className="flex-1 flex items-center gap-2 bg-white pl-3 pr-2 py-2 rounded-2xl border border-primary/30 shadow-sm animate-in slide-in-from-right-4 min-w-[200px]">
                                     {filterType === 'college' ? <School className="h-3.5 w-3.5 text-primary" /> : <Building2 className="h-3.5 w-3.5 text-primary" />}
                                     <div className="w-px h-4 bg-primary/20 flex-shrink-0" />
                                     <select 
@@ -453,7 +449,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                                 setSelectedBulkUserIds([]);
                                             }
                                         }}
-                                        className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-900 focus:ring-0 outline-none tracking-tight cursor-pointer truncate h-full"
+                                        className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-900 focus:ring-0 outline-none tracking-tight cursor-pointer truncate"
                                     >
                                         <option value="">{filterType === "college" ? "— Choose College —" : "— Choose Institute —"}</option>
                                         {(filterType === "college" ? uniqueColleges : uniqueInstitutes).map(val => (
@@ -468,7 +464,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
-                                        className={`h-11 px-4 rounded-2xl border-slate-200 bg-white text-[11px] font-black uppercase tracking-widest gap-2 shadow-sm w-full sm:w-auto shrink-0 ${selectedDate ? 'border-primary text-primary bg-primary/5' : 'text-slate-500'}`}
+                                        className={`h-11 px-4 rounded-2xl border-slate-200 bg-white text-[11px] font-black uppercase tracking-widest gap-2 shadow-sm ${selectedDate ? 'border-primary text-primary bg-primary/5' : 'text-slate-500'}`}
                                     >
                                         <CalendarIcon className="h-3.5 w-3.5" />
                                         {selectedDate ? format(selectedDate, "PPP") : "Filter Date"}
@@ -501,7 +497,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         setFilterValue("");
                                         setSelectedBulkUserIds([]);
                                     }}
-                                    className="h-11 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 gap-2 w-full sm:w-auto shrink-0"
+                                    className="h-11 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 gap-2"
                                 >
                                     <X className="h-3.5 w-3.5" />
                                     Clear All
@@ -600,29 +596,17 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         <p className="text-[10px] text-slate-400 font-medium leading-tight break-all">
                                             {student.email}
                                         </p>
-                                        {/* College & Institute Badges */}
-                                        <div className="flex flex-wrap gap-1.5 mt-1">
-                                            {(() => {
-                                                const getVal = (v: string | { name?: string; title?: string } | null | undefined) =>
-                                                    typeof v === 'object' && v !== null ? (v.name || v.title || '') : (v || '');
-                                                const college = getVal(student.college_name);
-                                                const institute = getVal(student.institute_name);
-                                                return (
-                                                    <>
-                                                        {college && (
-                                                            <Badge className="text-[8px] py-1 px-2.5 rounded-md uppercase font-black bg-blue-50 text-blue-600 border-none shadow-none w-fit max-w-[200px] truncate flex items-center gap-1">
-                                                                🏫 {college}
-                                                            </Badge>
-                                                        )}
-                                                        {institute && (
-                                                            <Badge className="text-[8px] py-1 px-2.5 rounded-md uppercase font-black bg-indigo-50 text-indigo-600 border-none shadow-none w-fit max-w-[200px] truncate flex items-center gap-1">
-                                                                🏢 {institute}
-                                                            </Badge>
-                                                        )}
-                                                    </>
-                                                );
-                                            })()}
-                                        </div>
+                                        {/* College badge */}
+                                        {(student.college_name || student.institute_name) && (() => {
+                                            const getVal = (v: string | { name?: string; title?: string } | null | undefined) =>
+                                                typeof v === 'object' && v !== null ? (v.name || v.title || '') : (v || '');
+                                            const label = getVal(student.college_name) || getVal(student.institute_name);
+                                            return label ? (
+                                                <Badge className="text-[7px] h-4 px-1.5 rounded-md uppercase font-black bg-blue-50 text-blue-600 border-none shadow-none w-fit max-w-[180px] truncate">
+                                                    {label}
+                                                </Badge>
+                                            ) : null;
+                                        })()}
                                         {/* Last login */}
                                         {student.last_login_at && (
                                             <div className="flex items-center gap-1.5">

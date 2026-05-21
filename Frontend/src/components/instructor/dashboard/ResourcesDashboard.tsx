@@ -203,6 +203,7 @@ export function ResourcesDashboard() {
             title: file.name,
             description: `Resource for course ${selectedCourse.title}`,
             resource_type: getResourceType(file.type || '', file.name) as CourseResource['resource_type'],
+            category: '',
             allowed_batches: []
         });
         setMetadataDialogOpen(true);

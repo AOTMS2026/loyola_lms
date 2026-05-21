@@ -5049,7 +5049,7 @@ app.get('/api/instructor/pending-grading', authenticateToken, async (req, res) =
 
         let query = { grading_status: { $in: ['pending', 'reevaluation'] } };
 
-        if (userRole !== 'admin') {
+        if (userRole !== 'admin' && userRole !== 'manager') {
             const instructorCourses = await Course.find({
                 $or: [{ instructor_id: req.user.id }, { instructor_ids: req.user.id }]
             }).select('_id').lean();
