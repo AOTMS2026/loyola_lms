@@ -15,7 +15,8 @@ import {
   HelpCircle,
   Timer,
   Play,
-  Terminal
+  Terminal,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -65,6 +66,7 @@ export function ExamSession({ examId, examTitle, durationMinutes, onFinish, onEx
   const [consoleOutput, setConsoleOutput] = useState<Record<string, string>>({});
   const [isRunning, setIsRunning] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isTimeOver, setIsTimeOver] = useState(false);
 
   const { toast } = useToast();
 
@@ -102,8 +104,11 @@ export function ExamSession({ examId, examTitle, durationMinutes, onFinish, onEx
   // Timer logic
   useEffect(() => {
     if (timeLeft <= 0) {
-      handleComplete();
-      return;
+      setIsTimeOver(true);
+      const submitTimeout = setTimeout(() => {
+        handleComplete();
+      }, 4000);
+      return () => clearTimeout(submitTimeout);
     }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
@@ -535,6 +540,49 @@ export function ExamSession({ examId, examTitle, durationMinutes, onFinish, onEx
                 </div>
             </DialogContent>
         </Dialog>
+
+        {/* ── Time Up Auto-Close Overlay ─────────────────────────────────────── */}
+        <AnimatePresence>
+          {isTimeOver && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-950/85 backdrop-blur-xl z-[200] flex items-center justify-center p-6 pointer-events-auto"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.1, type: "spring", stiffness: 200, damping: 25 }}
+                className="bg-white/10 border border-white/20 backdrop-blur-2xl rounded-[3rem] p-10 max-w-md w-full shadow-2xl flex flex-col items-center justify-center text-center space-y-6 relative overflow-hidden"
+              >
+                {/* Pulsing glow background decoration */}
+                <div className="absolute -top-12 -left-12 w-40 h-40 bg-red-500/20 rounded-full blur-3xl" />
+                <div className="absolute -bottom-12 -right-12 w-40 h-40 bg-red-500/20 rounded-full blur-3xl" />
+                
+                <div className="relative h-24 w-24 bg-red-500/20 rounded-full flex items-center justify-center border-2 border-red-500/30 animate-pulse">
+                  <Timer className="h-12 w-12 text-red-500" />
+                </div>
+
+                <div className="space-y-3 relative z-10">
+                  <h2 className="text-red-500 text-3xl sm:text-4xl font-black tracking-tight uppercase drop-shadow-[0_0_12px_rgba(239,68,68,0.4)]">
+                    YOUR EXAM CLOSE
+                  </h2>
+                  <p className="text-slate-300 text-xs font-bold uppercase tracking-widest leading-relaxed">
+                    The duration for this assessment has expired.
+                  </p>
+                </div>
+
+                <div className="py-2 px-6 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 text-red-400 animate-spin" />
+                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
+                    Securing and submitting progress...
+                  </span>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
     </div>
   );
 }

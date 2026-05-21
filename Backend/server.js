@@ -27,7 +27,7 @@ const { User, Profile, UserRole, OTP, VerifiedEmail, ResumeScan } = require('./m
 const { Course, Enrollment, Module, Resource, CourseRating, Video, Announcement, Timeline } = require('./models/Course');
 const { Exam, QuestionBank, StudentExamAccess, ExamResult, MockPaper, MockTestConfig } = require('./models/Exam');
 const { LiveClass } = require('./models/Content');
-const { SystemLog, SecurityEvent, LeaderboardStat, Notification, Attendance } = require('./models/System');
+const { SystemLog, SecurityEvent, LeaderboardStat, Notification, Attendance, Coupon, CouponRedemption, College } = require('./models/System');
 const { Conversation, Message } = require('./models/Chat');
 const { Doubt, DoubtReply } = require('./models/Doubt');
 const { Batch, StudentBatch, BatchRequest } = require('./models/Batch');
@@ -64,7 +64,10 @@ const MODEL_MAP = {
     'course_videos': Video,
     'live_classes': LiveClass,
     'course_timeline': Timeline,
-    'course_announcements': Announcement
+    'course_announcements': Announcement,
+    'coupons': Coupon,
+    'coupon_redemptions': CouponRedemption,
+    'colleges': College
 };
 
 const ALLOWED_TABLES = Object.keys(MODEL_MAP);
@@ -2240,7 +2243,7 @@ app.get('/api/admin/student-performance/:studentId', authenticateToken, requireA
         const studentId = req.params.studentId;
         const profile = await Profile.findOne({ user_id: studentId }).lean();
         const enrollmentsRaw = await Enrollment.find({ user_id: studentId }).populate('course_id', 'title').lean();
-        const resultsRaw = await ExamResult.find({ user_id: studentId }).populate('exam_id', 'title').lean();
+        const resultsRaw = await ExamResult.find({ student_id: studentId }).populate('exam_id', 'title').lean();
 
         const performanceData = {
             enrollments: enrollmentsRaw.map(e => ({
@@ -4463,7 +4466,7 @@ app.get('/api/admin/student-performance/:studentId', authenticateToken, requireA
             status: e.status
         }));
 
-        const results = await ExamResult.find({ user_id: studentId }).populate('exam_id mock_paper_id').lean();
+        const results = await ExamResult.find({ student_id: studentId }).populate('exam_id mock_paper_id').lean();
 
         const profile = await Profile.findOne({ user_id: studentId }).lean();
 
@@ -5470,9 +5473,108 @@ app.get('/api/courses/:courseId/roster', authenticateToken, requireInstructor, a
 
 // Simplified API
 
-// Bulk coupon generation removed
+// ─── Coupon Rewards Engine ────────────────────────────────────────────────────
 
-// Coupon system removed
+// Helper: generate a random 8-char alphanumeric code
+const generateCouponCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+};
+
+// POST /api/admin/coupons/generate — single student coupon
+app.post('/api/admin/coupons/generate', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        const { userId, amount } = req.body;
+        if (!userId || !amount || isNaN(Number(amount))) {
+            return res.status(400).json({ success: false, error: 'userId and valid amount are required' });
+        }
+
+        // Generate a unique code
+        let code;
+        let exists = true;
+        let attempts = 0;
+        while (exists && attempts < 10) {
+            code = generateCouponCode();
+            exists = await Coupon.exists({ code });
+            attempts++;
+        }
+
+        const coupon = await Coupon.create({
+            code,
+            user_id: userId,
+            discounted_price: Number(amount),
+            is_used: false,
+            created_at: new Date()
+        });
+
+        // Notify the student
+        await Notification.create({
+            user_id: userId,
+            type: 'coupon',
+            title: 'You received a Discount Coupon!',
+            message: `Your exclusive coupon code is ${code}. It gives you a discounted price of ₹${amount}.`,
+            data: { coupon_id: coupon._id, code, discounted_price: Number(amount) },
+            is_read: false
+        });
+
+        console.log(`[CouponEngine] Generated coupon ${code} for user ${userId} by admin ${req.user.id}`);
+        res.json({ success: true, code, coupon_id: coupon._id });
+    } catch (err) {
+        handleError(res, err, 'coupon-generate');
+    }
+});
+
+// POST /api/admin/coupons/bulk-generate — multiple students at once
+app.post('/api/admin/coupons/bulk-generate', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        const { userIds, amount } = req.body;
+        if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'userIds array is required' });
+        }
+        if (!amount || isNaN(Number(amount))) {
+            return res.status(400).json({ success: false, error: 'Valid amount is required' });
+        }
+
+        const created = [];
+        for (const userId of userIds) {
+            let code;
+            let exists = true;
+            let attempts = 0;
+            while (exists && attempts < 10) {
+                code = generateCouponCode();
+                exists = await Coupon.exists({ code });
+                attempts++;
+            }
+            const coupon = await Coupon.create({
+                code,
+                user_id: userId,
+                discounted_price: Number(amount),
+                is_used: false,
+                created_at: new Date()
+            });
+            // Notify each student
+            await Notification.create({
+                user_id: userId,
+                type: 'coupon',
+                title: 'You received a Discount Coupon!',
+                message: `Your exclusive coupon code is ${code}. Discounted price: ₹${amount}.`,
+                data: { coupon_id: coupon._id, code, discounted_price: Number(amount) },
+                is_read: false
+            });
+            created.push({ userId, code, coupon_id: coupon._id });
+        }
+
+        const lastCode = created.length > 0 ? created[created.length - 1].code : null;
+        console.log(`[CouponEngine] Bulk generated ${created.length} coupons by admin ${req.user.id}`);
+        res.json({ success: true, code: lastCode, count: created.length, coupons: created });
+    } catch (err) {
+        handleError(res, err, 'coupon-bulk-generate');
+    }
+});
+
+// Coupon system active (routes above handle generate/bulk-generate)
 
 app.get('/api/notifications', authenticateToken, async (req, res) => {
     try {
@@ -5531,19 +5633,33 @@ app.get('/api/admin/students', authenticateToken, requireAdminOrManager, async (
             {
                 $project: {
                     id: '$_id',
+                    user_id: '$_id',
                     full_name: 1,
                     email: 1,
-                    mobile_number: '$profile.mobile_number',
-                    phone: 1,
                     avatar_url: 1,
-                    college_name: '$profile.college_name',
-                    institute_name: '$profile.institute_name',
+                    phone: 1,
                     last_login_at: 1,
                     registration_date: 1,
                     registration_time: 1,
-                    role: { $literal: 'student' }
+                    created_at: 1,
+                    role: { $literal: 'student' },
+                    // All profile fields needed by Academic Scores
+                    mobile_number: '$profile.mobile_number',
+                    college_name: '$profile.college_name',
+                    institute_name: '$profile.institute_name',
+                    full_address: '$profile.full_address',
+                    city: '$profile.city',
+                    district: '$profile.district',
+                    country: '$profile.country',
+                    latitude: '$profile.latitude',
+                    longitude: '$profile.longitude',
+                    approval_status: { $ifNull: ['$profile.approval_status', 'pending'] },
+                    status: { $ifNull: ['$profile.approval_status', 'active'] },
+                    github_url: '$profile.github_url',
+                    linkedin_url: '$profile.linkedin_url',
                 }
-            }
+            },
+            { $sort: { created_at: -1 } }
         ]);
 
         res.json(students);
@@ -5887,6 +6003,9 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
         } else if (table === 'course_ratings') {
             data = await dataQuery
                 .populate('user_id', 'full_name avatar_url');
+        } else if (table === 'coupons') {
+            data = await dataQuery
+                .populate('user_id', 'full_name email avatar_url');
         } else {
             data = await dataQuery;
         }
@@ -6127,10 +6246,38 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
         }
 
         let itemToDelete = await Model.findById(id);
-        if (!itemToDelete && table === 'users') {
-            console.log(`[CASCADE] User ${id} not found in users collection, but executing cascade purge for safety...`);
-            itemToDelete = { _id: id };
+
+        // --- USER TABLE: Handle Profile ID fallback ---
+        // The QA panel fetches Profile documents. If the User no longer exists in the users
+        // collection (orphaned profile), the passed `id` may be the Profile's own _id,
+        // not the User's _id. We detect this and resolve the real userId for cascade.
+        let resolvedUserId = id; // default: assume id is a valid User _id
+        let resolvedProfileId = null; // the Profile _id to delete directly
+
+        if (table === 'users') {
+            if (!itemToDelete) {
+                // Not found in User collection – check if it's a Profile _id
+                const profileById = await Profile.findById(id).lean();
+                if (profileById) {
+                    console.log(`[CASCADE] ID ${id} is a Profile._id. Resolving real user_id: ${profileById.user_id}`);
+                    resolvedUserId = profileById.user_id ? profileById.user_id.toString() : id;
+                    resolvedProfileId = id; // remember to delete this profile directly
+                    // Try to find the real User document now
+                    itemToDelete = await User.findById(resolvedUserId) || { _id: resolvedUserId };
+                } else {
+                    console.log(`[CASCADE] User ${id} not found in users OR profiles collection, executing cascade purge for safety...`);
+                    itemToDelete = { _id: id };
+                }
+            } else {
+                // User found normally – also check if there's a Profile matching their _id
+                resolvedUserId = id;
+                const profileForUser = await Profile.findOne({ user_id: id }).lean();
+                if (profileForUser) {
+                    resolvedProfileId = profileForUser._id.toString();
+                }
+            }
         }
+
         if (!itemToDelete) return res.status(404).json({ error: 'Item not found' });
 
         // Security: Restrict deletions
@@ -6218,24 +6365,37 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
 
         // --- CUSTOM HOOKS FOR CASCADE DELETION ---
         if (table === 'users') {
-            console.log(`[CASCADE] Deleting user ${id}. Purging profile and all related data...`);
+            console.log(`[CASCADE] Permanently deleting user. User ID: ${resolvedUserId}, Profile ID: ${resolvedProfileId || 'N/A'}`);
+
+            // Collect all IDs to cascade-delete by
+            const userIdsToClean = [resolvedUserId];
+            if (resolvedProfileId && resolvedProfileId !== resolvedUserId) {
+                // Don't add duplicates
+            }
+
             await Promise.all([
-                Profile.deleteMany({ user_id: id }),
-                UserRole.deleteMany({ user_id: id }),
-                Enrollment.deleteMany({ user_id: id }),
-                ExamResult.deleteMany({ student_id: id }),
-                ExamResult.deleteMany({ user_id: id }),
-                StudentExamAccess.deleteMany({ student_id: id }),
-                Message.deleteMany({ sender: id }),
-                Conversation.deleteMany({ participants: id }),
-                SystemLog.deleteMany({ user_id: id }),
-                LeaderboardStat.deleteMany({ user_id: id }),
-                Notification.deleteMany({ user_id: id }),
-                Attendance.deleteMany({ student_id: id }),
-                StudentBatch.deleteMany({ student_id: id }),
-                BatchRequest.deleteMany({ student_id: id }),
-                Doubt.deleteMany({ user_id: id }),
-                DoubtReply.deleteMany({ user_id: id })
+                // Delete the User credential
+                User.deleteMany({ _id: resolvedUserId }),
+                // Delete Profile by user_id AND by profile _id (catches orphaned profiles)
+                Profile.deleteMany({ user_id: resolvedUserId }),
+                resolvedProfileId ? Profile.deleteMany({ _id: resolvedProfileId }) : Promise.resolve(),
+                // Delete all related records using the resolved user ID
+                UserRole.deleteMany({ user_id: resolvedUserId }),
+                Enrollment.deleteMany({ user_id: resolvedUserId }),
+                ExamResult.deleteMany({ student_id: resolvedUserId }),
+                ExamResult.deleteMany({ user_id: resolvedUserId }),
+                StudentExamAccess.deleteMany({ student_id: resolvedUserId }),
+                Message.deleteMany({ sender: resolvedUserId }),
+                Conversation.deleteMany({ participants: resolvedUserId }),
+                SystemLog.deleteMany({ user_id: resolvedUserId }),
+                LeaderboardStat.deleteMany({ user_id: resolvedUserId }),
+                Notification.deleteMany({ user_id: resolvedUserId }),
+                Attendance.deleteMany({ student_id: resolvedUserId }),
+                StudentBatch.deleteMany({ student_id: resolvedUserId }),
+                BatchRequest.deleteMany({ student_id: resolvedUserId }),
+                Doubt.deleteMany({ user_id: resolvedUserId }),
+                DoubtReply.deleteMany({ user_id: resolvedUserId }),
+                ResumeScan.deleteMany({ user_id: resolvedUserId }),
             ]);
         } else if (table === 'courses') {
             console.log(`[CASCADE] Deleting course ${id}. Purging modules, resources, and student access...`);
@@ -6336,7 +6496,11 @@ app.delete('/api/data/:table/:id', authenticateToken, async (req, res) => {
             }
         }
 
-        await Model.findByIdAndDelete(id);
+        // For 'users' table, cascade above already used deleteMany with resolvedUserId.
+        // Only call findByIdAndDelete for non-user tables (or as safety net if non-cascaded).
+        if (table !== 'users') {
+            await Model.findByIdAndDelete(id);
+        }
         io.emit(`${table}_changed`, { action: 'delete', id });
         res.json({ success: true });
     } catch (err) {

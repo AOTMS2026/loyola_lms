@@ -624,7 +624,7 @@ export default function AdminDashboard() {
                       },
                       {
                         id: "student-performance",
-                        label: "Student Performance",
+                        label: "Academic Scores",
                         icon: BarChart3,
                         key: "tab-student-performance",
                       },

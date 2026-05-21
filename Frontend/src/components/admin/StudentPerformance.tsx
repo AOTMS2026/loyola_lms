@@ -441,27 +441,25 @@ export function StudentPerformance({
 
   useEffect(() => { loadStudents(); }, []);
 
-  // ── Load profiles + merge user_id ────────────────────────────────────────────
+  // ── Load students using the same endpoint as UserManagement (/admin/users)
+  // This ensures the count ALWAYS matches between "User Management" and "Academic Scores"
+  // because /admin/users joins User + Profile + UserRole (only real registered users).
+  // The old approach (/data/profiles + /data/user_roles) would include orphaned profiles
+  // that have no User credential, defaulting them to "student" and inflating the count.
   const loadStudents = async (showToast = false) => {
     setLoading(true);
     setIsSyncing(true);
     try {
-      const [profilesData, rolesData] = await Promise.all([
-        fetchWithAuth<StudentProfile[]>("/data/profiles?sort=created_at&order=desc&limit=500"),
-        fetchWithAuth<{ user_id: string; role: string }[]>("/data/user_roles?limit=1000"),
-      ]);
-      const rolesMap: Record<string, string> = {};
-      (rolesData || []).forEach(r => { rolesMap[r.user_id] = r.role; });
-
-      // profiles: id = profile._id, user_id = actual user ID stored in profile.user_id
-      const merged = (profilesData || []).map(p => ({
-        ...p,
-        role: rolesMap[p.user_id || p.id] || "student",
-        is_approved: p.approval_status === "approved",
+      // /admin/users returns merged User+Profile+UserRole data — same source as UserManagement
+      const usersData = await fetchWithAuth<StudentProfile[]>("/admin/students");
+      const studentsOnly = (usersData || []).filter(u => u.role === 'student' || !u.role);
+      // Map to expected shape (admin/students returns user records with profile joined)
+      const mapped = studentsOnly.map(u => ({
+        ...u,
+        is_approved: u.approval_status === "approved",
+        role: u.role || "student",
       }));
-      // Filter to only show students
-      const studentsOnly = merged.filter(s => s.role === 'student');
-      setStudents(studentsOnly);
+      setStudents(mapped);
       if (showToast) toast.success("Performance data synchronized");
     } catch {
       toast.error("Failed to load students");
@@ -557,21 +555,13 @@ export function StudentPerformance({
             <BarChart3 className="h-8 w-8 text-white" />
           </div>
           <div className="space-y-1">
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 leading-none">Student Directory</h1>
+            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-slate-900 leading-none">Academic Scores</h1>
             <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
                <span className="h-1 w-4 bg-primary rounded-full" /> Platform Registry V.2
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-           <Button
-            variant="outline"
-            onClick={loadStudents}
-            className="h-12 px-6 rounded-2xl gap-3 font-black text-[11px] uppercase tracking-widest border-slate-200 bg-white shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh Registry
-          </Button>
-        </div>
+        
         <SyncDataButton 
           onSync={onSync || (() => loadStudents(true))}
           isLoading={parentLoading || isSyncing}
@@ -648,7 +638,7 @@ export function StudentPerformance({
               <div className="h-10 w-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-lg">
                 <Users className="h-5 w-5" />
               </div>
-              STUDENT DIRECTORY
+              ACADEMIC SCORES DIRECTORY
             </CardTitle>
             <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-2xl shadow-sm border border-slate-100">
                <span className="animate-pulse h-2 w-2 rounded-full bg-emerald-500" />
@@ -686,9 +676,6 @@ export function StudentPerformance({
                   // Quick summary from props or profile
                   const myBulk = bulkEnrollments.filter(e => e.user_id === stu.user_id);
                   const coursesCount = myBulk.length > 0 ? myBulk.length : (enrollments.length || 0);
-                  const avgProgress = myBulk.length > 0 
-                    ? Math.round(myBulk.reduce((acc, curr) => acc + (curr.progress_percentage || 0), 0) / myBulk.length)
-                    : (enrollments.length > 0 ? Math.round(enrollments.reduce((acc, curr) => acc + (curr.progress || 0), 0) / enrollments.length) : 0);
 
                   return (
                     <motion.div
@@ -743,11 +730,6 @@ export function StudentPerformance({
                           <div className="flex flex-col items-start sm:items-center px-4 py-2 bg-slate-50 sm:bg-transparent rounded-2xl">
                             <span className="text-xl sm:text-2xl font-black text-slate-900 leading-none">{coursesCount}</span>
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Courses</span>
-                          </div>
-                          
-                          <div className="flex flex-col items-start sm:items-center px-4 py-2 bg-slate-50 sm:bg-transparent rounded-2xl">
-                            <span className={`text-xl sm:text-2xl font-black leading-none ${avgProgress >= 70 ? 'text-emerald-500' : avgProgress >= 40 ? 'text-amber-500' : 'text-slate-900'}`}>{avgProgress}%</span>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Progress</span>
                           </div>
 
                           <div className="flex flex-col items-start sm:items-center px-4 py-2 bg-slate-50 sm:bg-transparent rounded-2xl">
@@ -883,37 +865,6 @@ export function StudentPerformance({
                                     )}
                                   </Sec>
 
-                                  {/* 3. Courses */}
-                                  <Sec icon={BookOpen} title="Course Pipeline" color="text-slate-900" count={enrollments.length} empty="Zero Enrollments Detected">
-                                    <div className="space-y-3 pt-2 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
-                                      {enrollments.map((e, i) => {
-                                        const prog = e.progress ?? 0;
-                                        return (
-                                          <div key={i} className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow group/card">
-                                            <div className="flex items-center justify-between mb-3">
-                                              <p className="text-xs font-black text-slate-900 truncate flex-1 uppercase tracking-tighter">{sv(e.course_name)}</p>
-                                              <Badge className={`text-[8px] font-black border-none px-2 py-0.5 rounded-full ${e.status === "active" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-400"}`}>
-                                                {e.status?.toUpperCase() || "PENDING"}
-                                              </Badge>
-                                            </div>
-                                            <div className="space-y-2">
-                                              <div className="flex items-center justify-between">
-                                                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">CURRICULUM COMPLETION</span>
-                                                 <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">{prog}%</span>
-                                              </div>
-                                              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                                <motion.div 
-                                                   initial={{ width: 0 }}
-                                                   animate={{ width: `${prog}%` }}
-                                                   className="h-full bg-slate-900 rounded-full" 
-                                                />
-                                              </div>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </Sec>
 
                                   {/* 4. Exams */}
                                   <Sec icon={Award} title="Academic Scores" color="text-slate-900" count={results.length} empty="No Assessments Found">

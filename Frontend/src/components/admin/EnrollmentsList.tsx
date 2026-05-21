@@ -726,8 +726,9 @@ export function EnrollmentsList({
                           <Users className="h-6 w-6 text-white" />
                         </div>
                         <div className="space-y-0.5">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Student Name</p>
-                          <p className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">{selectedEnrollment?.user_name}</p>
+                          <p className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
+                            {selectedEnrollment ? getEnrollmentName(selectedEnrollment) : 'Unknown Student'}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4 group">
@@ -735,8 +736,9 @@ export function EnrollmentsList({
                           <GraduationCap className="h-6 w-6 text-indigo-600" />
                         </div>
                         <div className="space-y-0.5">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Enrolled Course</p>
-                          <p className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">{selectedEnrollment?.course_name}</p>
+                          <p className="text-base font-black text-slate-900 group-hover:text-indigo-600 transition-colors leading-tight">
+                            {selectedEnrollment ? getCourseName(selectedEnrollment) : 'Unknown Course'}
+                          </p>
                         </div>
                       </div>
                     </div>

@@ -295,10 +295,18 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
     };
 
     if (filterType === "college") {
-      return matchesSearch && getCollegeName(s.college_name) === filterValue;
+      const colName = getCollegeName(s.college_name);
+      if (filterValue === "") {
+        return matchesSearch && !!colName;
+      }
+      return matchesSearch && colName === filterValue;
     }
     if (filterType === "institute") {
-      return matchesSearch && getCollegeName(s.institute_name) === filterValue;
+      const instName = getCollegeName(s.institute_name);
+      if (filterValue === "") {
+        return matchesSearch && !!instName;
+      }
+      return matchesSearch && instName === filterValue;
     }
     return matchesSearch;
   });
@@ -363,16 +371,12 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
             <Badge variant="secondary" className="px-3 py-1 bg-primary/5 text-primary border-none font-bold">
                 {students.length} Active Students
             </Badge>
-            <SyncDataButton 
-                onSync={() => refreshAllData(true)} 
-                isLoading={loading} 
-                className="h-10 px-4"
-            />
+           
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
           <Card className="border-none shadow-2xl shadow-slate-200/50 overflow-hidden rounded-[2.5rem] bg-white/80 backdrop-blur-md min-h-[600px] flex flex-col">
             <CardHeader className="bg-slate-50/50 border-b border-slate-100/50 p-8">
                 <div className="flex flex-col gap-6">
@@ -407,10 +411,10 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                     </div>
 
                     <div className="flex flex-col gap-4">
-                        {/* Row 1: Filter controls - always single line */}
-                        <div className="flex flex-wrap items-center gap-3">
+                        {/* Filter controls - responsive layout */}
+                        <div className="flex flex-col sm:flex-row sm:items-center flex-wrap gap-3">
                             {/* Filter Type Dropdown */}
-                            <div className="flex-shrink-0 flex items-center gap-2 bg-white pl-3 pr-2 py-2 rounded-2xl border border-slate-200 shadow-sm min-w-0">
+                            <div className="h-11 flex items-center gap-2 bg-white pl-3 pr-2 rounded-2xl border border-slate-200 shadow-sm w-full sm:w-[180px] shrink-0">
                                 <Filter className="h-3.5 w-3.5 text-slate-400" />
                                 <div className="w-px h-4 bg-slate-200 flex-shrink-0" />
                                 <select 
@@ -421,7 +425,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         setSelectedStudent(null);
                                         setSelectedBulkUserIds([]);
                                     }}
-                                    className="bg-transparent border-none text-[11px] font-black text-slate-700 focus:ring-0 outline-none uppercase tracking-wider cursor-pointer pr-1 whitespace-nowrap"
+                                    className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-700 focus:ring-0 outline-none uppercase tracking-wider cursor-pointer pr-4 whitespace-nowrap h-full"
                                 >
                                     <option value="all">All Students</option>
                                     <option value="college">College Wise</option>
@@ -431,7 +435,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
 
                             {/* College / Institute Dropdown */}
                             {filterType !== "all" && (
-                                <div className="flex-1 flex items-center gap-2 bg-white pl-3 pr-2 py-2 rounded-2xl border border-primary/30 shadow-sm animate-in slide-in-from-right-4 min-w-[200px]">
+                                <div className="h-11 flex-1 min-w-[240px] flex items-center gap-2 bg-white pl-3 pr-2 rounded-2xl border border-primary/30 shadow-sm animate-in slide-in-from-right-4 w-full">
                                     {filterType === 'college' ? <School className="h-3.5 w-3.5 text-primary" /> : <Building2 className="h-3.5 w-3.5 text-primary" />}
                                     <div className="w-px h-4 bg-primary/20 flex-shrink-0" />
                                     <select 
@@ -449,7 +453,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                                 setSelectedBulkUserIds([]);
                                             }
                                         }}
-                                        className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-900 focus:ring-0 outline-none tracking-tight cursor-pointer truncate"
+                                        className="flex-1 bg-transparent border-none text-[11px] font-black text-slate-900 focus:ring-0 outline-none tracking-tight cursor-pointer truncate h-full"
                                     >
                                         <option value="">{filterType === "college" ? "— Choose College —" : "— Choose Institute —"}</option>
                                         {(filterType === "college" ? uniqueColleges : uniqueInstitutes).map(val => (
@@ -464,7 +468,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                 <PopoverTrigger asChild>
                                     <Button
                                         variant="outline"
-                                        className={`h-11 px-4 rounded-2xl border-slate-200 bg-white text-[11px] font-black uppercase tracking-widest gap-2 shadow-sm ${selectedDate ? 'border-primary text-primary bg-primary/5' : 'text-slate-500'}`}
+                                        className={`h-11 px-4 rounded-2xl border-slate-200 bg-white text-[11px] font-black uppercase tracking-widest gap-2 shadow-sm w-full sm:w-auto shrink-0 ${selectedDate ? 'border-primary text-primary bg-primary/5' : 'text-slate-500'}`}
                                     >
                                         <CalendarIcon className="h-3.5 w-3.5" />
                                         {selectedDate ? format(selectedDate, "PPP") : "Filter Date"}
@@ -497,7 +501,7 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         setFilterValue("");
                                         setSelectedBulkUserIds([]);
                                     }}
-                                    className="h-11 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 gap-2"
+                                    className="h-11 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 gap-2 w-full sm:w-auto shrink-0"
                                 >
                                     <X className="h-3.5 w-3.5" />
                                     Clear All
@@ -546,19 +550,19 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                             <p className="text-sm font-black text-slate-300 uppercase tracking-widest">No candidates found in this scope</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4 overflow-y-auto max-h-[600px] pr-2 custom-scrollbar">
+                        <div className="grid grid-cols-1 gap-3 overflow-y-auto max-h-[600px] pr-1 custom-scrollbar">
                             {filteredStudents.map((student) => (
                                 <motion.div
                                     key={student.id}
                                     layout
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    className={`group flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 cursor-pointer relative overflow-hidden ${
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className={`group flex items-start gap-3 p-4 rounded-2xl border transition-all duration-200 cursor-pointer relative ${
                                         selectedStudent?.id === student.id 
-                                        ? "bg-primary/5 border-primary shadow-xl shadow-primary/5 ring-1 ring-primary/20" 
+                                        ? "bg-primary/5 border-primary shadow-lg shadow-primary/5 ring-1 ring-primary/20" 
                                         : selectedBulkUserIds.includes(student.id)
-                                        ? "bg-indigo-50/50 border-indigo-200 shadow-lg shadow-indigo-100"
-                                        : "bg-white border-slate-200 hover:border-primary/30 hover:shadow-lg hover:shadow-slate-200/50"
+                                        ? "bg-indigo-50/50 border-indigo-200 shadow-md shadow-indigo-100"
+                                        : "bg-white border-slate-200 hover:border-primary/30 hover:shadow-md"
                                     }`}
                                     onClick={() => {
                                         if (filterType === 'all') {
@@ -568,64 +572,77 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                         }
                                     }}
                                 >
+                                    {/* Selected indicator corner badge */}
                                     { (selectedStudent?.id === student.id || selectedBulkUserIds.includes(student.id)) && (
-                                        <div className={`absolute top-0 right-0 h-10 w-10 rounded-bl-[2rem] flex items-center justify-center ${selectedBulkUserIds.includes(student.id) ? 'bg-indigo-500' : 'bg-primary/10'}`}>
-                                            <CheckCircle2 className={`h-4 w-4 ${selectedBulkUserIds.includes(student.id) ? 'text-white' : 'text-primary'}`} />
+                                        <div className={`absolute top-0 right-0 h-8 w-8 rounded-bl-[1.5rem] flex items-center justify-center ${selectedBulkUserIds.includes(student.id) ? 'bg-indigo-500' : 'bg-primary/10'}`}>
+                                            <CheckCircle2 className={`h-3.5 w-3.5 ${selectedBulkUserIds.includes(student.id) ? 'text-white' : 'text-primary'}`} />
                                         </div>
                                     )}
 
-                                    <div className="flex items-center gap-4 min-w-0 flex-1">
-                                        <div className="relative shrink-0">
-                                            <Avatar className="h-12 w-12 border-2 border-slate-50 shadow-sm rounded-full overflow-hidden transition-transform duration-500 group-hover:scale-105">
-                                                <AvatarImage src={student.avatar_url || ""} />
-                                                <AvatarFallback className="bg-primary/5 text-primary text-sm font-black">{student.full_name?.[0]}</AvatarFallback>
-                                            </Avatar>
-                                            <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white flex items-center justify-center shadow-sm bg-emerald-500">
-                                                <div className="h-1 w-1 bg-white rounded-full animate-pulse" />
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex-1 min-w-0 pr-4">
-                                            <h4 className={`text-sm font-black transition-colors truncate tracking-tight mb-1 ${selectedStudent?.id === student.id ? "text-primary" : "text-slate-900 group-hover:text-primary"}`}>
-                                                {student.full_name}
-                                            </h4>
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <Badge className="text-[7px] h-3.5 px-1.5 rounded-md uppercase font-black bg-blue-50 text-blue-600 border-none shadow-none flex-shrink-0">
-                                                    {student.college_name || student.institute_name || "Self Registered"}
-                                                </Badge>
-                                                <span className="text-[10px] font-bold text-slate-400 truncate opacity-70 tracking-tight">
-                                                    {student.email}
-                                                </span>
-                                            </div>
-                                            {student.last_login_at && (
-                                                <div className="flex items-center gap-1.5 mt-1">
-                                                    <Clock className="h-2.5 w-2.5 text-slate-300" />
-                                                    <span className="text-[9px] font-black uppercase tracking-tighter text-slate-400">
-                                                        Logged: {format(parseISO(student.last_login_at), "MMM d, hh:mm aa")}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            {(student.registration_date || student.registration_time) && (
-                                                <div className="flex items-center gap-1.5 mt-1 border-t border-slate-50 pt-1">
-                                                    <CalendarIcon className="h-2.5 w-2.5 text-slate-300" />
-                                                    <span className="text-[9px] font-black uppercase tracking-tighter text-slate-400">
-                                                        Joined: {student.registration_date} @ {student.registration_time}
-                                                    </span>
-                                                </div>
-                                            )}
+                                    {/* Avatar */}
+                                    <div className="relative shrink-0">
+                                        <Avatar className="h-11 w-11 border-2 border-slate-100 shadow-sm rounded-full">
+                                            <AvatarImage src={student.avatar_url || ""} />
+                                            <AvatarFallback className="bg-primary/5 text-primary text-sm font-black">{student.full_name?.[0]?.toUpperCase()}</AvatarFallback>
+                                        </Avatar>
+                                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500 flex items-center justify-center">
+                                            <div className="h-1 w-1 bg-white rounded-full animate-pulse" />
                                         </div>
                                     </div>
 
-                                    <div className="shrink-0 flex items-center justify-end">
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0 space-y-1">
+                                        {/* Name — never truncated, always visible */}
+                                        <p className={`text-sm font-black leading-tight ${selectedStudent?.id === student.id ? "text-primary" : "text-slate-900"}`}>
+                                            {student.full_name || "—"}
+                                        </p>
+                                        {/* Email */}
+                                        <p className="text-[10px] text-slate-400 font-medium leading-tight break-all">
+                                            {student.email}
+                                        </p>
+                                        {/* College & Institute Badges */}
+                                        <div className="flex flex-wrap gap-1.5 mt-1">
+                                            {(() => {
+                                                const getVal = (v: string | { name?: string; title?: string } | null | undefined) =>
+                                                    typeof v === 'object' && v !== null ? (v.name || v.title || '') : (v || '');
+                                                const college = getVal(student.college_name);
+                                                const institute = getVal(student.institute_name);
+                                                return (
+                                                    <>
+                                                        {college && (
+                                                            <Badge className="text-[7px] h-4 px-1.5 rounded-md uppercase font-black bg-blue-50 text-blue-600 border-none shadow-none w-fit max-w-[180px] truncate flex items-center gap-0.5">
+                                                                🏫 {college}
+                                                            </Badge>
+                                                        )}
+                                                        {institute && (
+                                                            <Badge className="text-[7px] h-4 px-1.5 rounded-md uppercase font-black bg-indigo-50 text-indigo-600 border-none shadow-none w-fit max-w-[180px] truncate flex items-center gap-0.5">
+                                                                🏢 {institute}
+                                                            </Badge>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
+                                        </div>
+                                        {/* Last login */}
+                                        {student.last_login_at && (
+                                            <div className="flex items-center gap-1.5">
+                                                <Clock className="h-2.5 w-2.5 text-slate-300 shrink-0" />
+                                                <span className="text-[9px] font-bold uppercase tracking-tight text-slate-400">
+                                                    {format(parseISO(student.last_login_at), "MMM d, h:mm a")}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action button */}
+                                    <div className="shrink-0 self-center">
                                         <Button 
                                             size="sm"
-                                            variant={selectedStudent?.id === student.id || selectedBulkUserIds.includes(student.id) ? "default" : "secondary"}
-                                            className={`h-10 px-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${
+                                            className={`h-9 px-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-1.5 ${
                                                 selectedStudent?.id === student.id 
-                                                ? "bg-primary text-white shadow-lg shadow-primary/20" 
+                                                ? "bg-primary text-white shadow-md shadow-primary/20" 
                                                 : selectedBulkUserIds.includes(student.id)
-                                                ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-100"
+                                                ? "bg-red-500 hover:bg-red-600 text-white"
                                                 : "bg-primary/5 text-primary hover:bg-primary hover:text-white"
                                             }`}
                                             onClick={(e) => {
@@ -638,17 +655,9 @@ export function CouponManager({ onSync, loading: parentLoading = false }: Coupon
                                             }}
                                         >
                                             {selectedBulkUserIds.includes(student.id) ? (
-                                                <>
-                                                    <Plus className="h-3.5 w-3.5 rotate-45" />
-                                                    <span className="hidden xl:inline">Deselect</span>
-                                                    <span className="xl:hidden">-</span>
-                                                </>
+                                                <><Plus className="h-3 w-3 rotate-45" /><span>Remove</span></>
                                             ) : (
-                                                <>
-                                                    <Plus className="h-3.5 w-3.5" />
-                                                    <span className="hidden xl:inline">Add Propel</span>
-                                                    <span className="xl:hidden">Add</span>
-                                                </>
+                                                <><Plus className="h-3 w-3" /><span>Select</span></>
                                             )}
                                         </Button>
                                     </div>
