@@ -19,6 +19,7 @@ import { ResumeScanHistory } from "@/components/admin/ResumeScanHistory";
 import { LiveMonitoring } from "@/components/admin/LiveMonitoring";
 import { StudentPerformance } from "@/components/admin/StudentPerformance";
 import { AICommunicationHub } from "@/components/admin/AICommunicationHub";
+import { LiveClassManager } from "@/components/instructor/dashboard/LiveClassManager";
 import SubmissionsGrading from "@/components/admin/SubmissionsGrading";
 import InstructorAccessAdmin from "@/pages/InstructorAccess";
 import { ExamScheduler } from "@/components/manager/ExamScheduler";
@@ -45,7 +46,6 @@ import {
   Shield,
   BookOpen,
   BarChart3,
-  Settings,
   ShieldAlert,
   RefreshCw,
   FileQuestion,
@@ -76,6 +76,7 @@ import {
   CheckCheck,
   Trophy,
   Zap,
+  Radio,
   Sparkles,
   LayoutGrid,
   Star,
@@ -418,7 +419,6 @@ export default function AdminDashboard() {
       "/admin/live-monitoring": "live-monitoring",
       "/admin/coupons": "coupons",
       "/admin/profile": "profile",
-      "/admin/settings": "settings",
       "/admin/notifications": "notifications",
       "/admin/student-performance": "student-performance",
       "/admin/grading": "grading",
@@ -744,12 +744,6 @@ export default function AdminDashboard() {
                         key: "tab-live-monitoring",
                       },
                       {
-                        id: "settings",
-                        label: "Settings",
-                        icon: Settings,
-                        key: "tab-settings",
-                      },
-                      {
                         id: "notifications",
                         label: "Notification",
                         icon: Bell,
@@ -772,6 +766,12 @@ export default function AdminDashboard() {
                         label: "Submissions Grading",
                         icon: ClipboardList,
                         key: "tab-grading",
+                      },
+                      {
+                        id: "live-broadcast",
+                        label: "Live Broadcast",
+                        icon: Radio,
+                        key: "tab-live-broadcast",
                       },
                     ]
 .map((tab) => (
@@ -1033,167 +1033,6 @@ export default function AdminDashboard() {
                 </TabsContent>
 
                 <TabsContent
-                  key="tab-settings"
-                  value="settings"
-                  className="mt-0 outline-none"
-                >
-                  <motion.div
-                    key="motion-settings"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="grid gap-6 md:grid-cols-2"
-                  >
-                    <Card className="rounded-[2rem] border-slate-200 shadow-sm overflow-hidden bg-white/50 backdrop-blur-md">
-                      <CardHeader className="bg-slate-50/50 border-b border-slate-100">
-                        <CardTitle className="flex items-center justify-between w-full text-slate-900">
-                          <div className="flex items-center gap-2">
-                            <Settings className="h-5 w-5 text-primary" />
-                            System Configuration
-                          </div>
-                          <SyncDataButton 
-                            onSync={() => refresh(true)}
-                            isLoading={dataLoading}
-                            label="Sync Settings"
-                            className="h-8 px-3"
-                          />
-                        </CardTitle>
-                        <CardDescription>
-                          Manage global platform settings and system health
-                          status.
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-6 space-y-6">
-                        <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
-                          <div className="space-y-1">
-                            <p className="text-sm font-bold text-slate-900">
-                              Platform Online Status
-                            </p>
-                            <p className="text-xs text-primary/70 font-medium italic">
-                              Fetching real-time integrity data...
-                            </p>
-                          </div>
-                          <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white border-0 shadow-sm shadow-emerald-200 px-3 font-bold">
-                            OPERATIONAL
-                          </Badge>
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between py-3 border-b border-slate-50 group hover:bg-slate-50/30 transition-colors px-2 rounded-xl">
-                            <div className="space-y-0.5">
-                              <span className="text-sm font-bold text-slate-700">
-                                Auto-Approval Protocol
-                              </span>
-                              <p className="text-[10px] text-slate-500 font-medium">
-                                Instantly verify new student registration nodes
-                              </p>
-                            </div>
-                            <Switch
-                              defaultChecked
-                              className="data-[state=checked]:bg-primary"
-                            />
-                          </div>
-                          <div className="flex items-center justify-between py-3 border-b border-slate-50 group hover:bg-slate-50/30 transition-colors px-2 rounded-xl">
-                            <div className="space-y-0.5">
-                              <span className="text-sm font-bold text-slate-700">
-                                Maintenance Synchronizer
-                              </span>
-                              <p className="text-[10px] text-slate-500 font-medium">
-                                Pause all public-facing API endpoints
-                              </p>
-                            </div>
-                            <Switch className="data-[state=checked]:bg-primary" />
-                          </div>
-                          <div className="flex items-center justify-between py-3 group hover:bg-slate-50/30 transition-colors px-2 rounded-xl">
-                            <div className="space-y-0.5">
-                              <span className="text-sm font-bold text-slate-700">
-                                WebSocket Real-time Push
-                              </span>
-                              <p className="text-[10px] text-slate-500 font-medium">
-                                Sync with central notification authority
-                              </p>
-                            </div>
-                            <Badge
-                              variant="outline"
-                              className="text-emerald-600 border-emerald-200 bg-emerald-50 px-2 font-black tracking-tighter"
-                            >
-                              CONNECTED
-                            </Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-
-                    <Card className="rounded-[2rem] border-slate-200 shadow-sm overflow-hidden bg-white/50 backdrop-blur-md">
-                      <CardHeader className="bg-slate-50/50 border-b border-slate-100">
-                        <CardTitle className="flex items-center gap-2 text-slate-900">
-                          <Activity className="h-5 w-5 text-accent" />
-                          Administrative Node Stats
-                        </CardTitle>
-                        <CardDescription>
-                          Live telemetry from high-availability services
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="p-6">
-                        <div className="grid grid-cols-2 gap-4">
-                          {[
-                            {
-                              label: "Internal Latency",
-                              value: "18ms",
-                              desc: "Sync latency",
-                              icon: Zap,
-                            },
-                            {
-                              label: "Cluster Peers",
-                              value: `${profiles.length}+`,
-                              desc: "Live admin nodes",
-                              icon: Users,
-                            },
-                            {
-                              label: "Engine Uptime",
-                              value: "99.99%",
-                              desc: "Continuous runtime",
-                              icon: Clock,
-                            },
-                            {
-                              label: "Memory Buffer",
-                              value: "31%",
-                              desc: "Optimized usage",
-                              icon: Database,
-                            },
-                          ].map((s) => (
-                            <div
-                              key={s.label}
-                              className="p-4 bg-white/80 rounded-2xl border border-slate-100 group hover:border-accent/40 transition-all duration-300 shadow-sm hover:shadow-md"
-                            >
-                              <div className="flex items-center justify-between mb-2">
-                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.1em]">
-                                  {s.label}
-                                </p>
-                                <s.icon className="h-3.5 w-3.5 text-slate-300" />
-                              </div>
-                              <p className="text-2xl font-black text-slate-900 tracking-tighter">
-                                {s.value}
-                              </p>
-                              <p className="text-[10px] text-slate-400 font-bold mt-1.5 uppercase leading-none opacity-60">
-                                {s.desc}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                      <CardFooter className="bg-slate-50/30 border-t border-slate-100 py-3">
-                        <div className="flex items-center gap-2 ml-auto">
-                          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" />
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                            Live Syncing
-                          </span>
-                        </div>
-                      </CardFooter>
-                    </Card>
-                  </motion.div>
-                </TabsContent>
-
-                <TabsContent
                   key="tab-ai-hub"
                   value="ai-hub"
                   className="mt-0 outline-none"
@@ -1224,6 +1063,20 @@ export default function AdminDashboard() {
                       onSync={() => refresh(true)}
                       loading={dataLoading}
                     />
+                  </motion.div>
+                </TabsContent>
+
+                <TabsContent
+                  key="tab-live-broadcast"
+                  value="live-broadcast"
+                  className="mt-0 outline-none"
+                >
+                  <motion.div
+                    key="motion-live-broadcast"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <LiveClassManager />
                   </motion.div>
                 </TabsContent>
 

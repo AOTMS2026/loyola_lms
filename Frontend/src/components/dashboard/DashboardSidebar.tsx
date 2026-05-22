@@ -67,7 +67,6 @@ const navigationGroups = [
       { title: "Attendance", url: "/student-dashboard/attendance", icon: ClipboardList },
       { title: "History", url: "/student-dashboard/history", icon: History },
       { title: "Notifications", url: "/student-dashboard/notifications", icon: Bell },
-      { title: "Settings", url: "/student-dashboard/settings", icon: Settings },
     ],
   },
 ];

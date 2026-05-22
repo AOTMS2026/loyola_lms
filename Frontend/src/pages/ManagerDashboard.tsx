@@ -16,6 +16,7 @@ import { ManagerVideoLibrary } from "@/components/manager/ManagerVideoLibrary";
 import { AllCoursesList } from "@/components/admin/AllCoursesList";
 import { UserManagement } from "@/components/admin/UserManagement";
 import { QuestionBankApproval } from "@/components/admin/QuestionBankApproval";
+import { LiveClassManager } from "@/components/instructor/dashboard/LiveClassManager";
 import SubmissionsGrading from "@/components/admin/SubmissionsGrading";
 
 import { CourseBuilder } from "@/components/instructor/courses/CourseBuilder";
@@ -68,6 +69,7 @@ import {
   Zap,
   Database as DbIcon,
   KeyRound,
+  Radio,
 
   ClipboardList,
   BookOpen,
@@ -278,6 +280,7 @@ export default function ManagerDashboard() {
     { id: "instructors",         title: "Instructors",         url: "/manager/instructors",         icon: Users },
     { id: "enrollments",         title: "Enrollments Hub",     url: "/manager/enrollments",         icon: DbIcon },
     { id: "submissions-grading", title: "Submissions Grading", url: "/manager/submissions-grading", icon: ClipboardList },
+    { id: "live-broadcast",      title: "Live Broadcast",      url: "/manager/live-broadcast",      icon: Radio },
 
     { id: "coupons",             title: "Rewards & Coupons",   url: "/manager/coupons",             icon: Trophy },
     { id: "grant-access",        title: "Grant Access",        url: "/manager/grant-access",        icon: KeyRound },
@@ -389,6 +392,8 @@ export default function ManagerDashboard() {
         return <InstructorAccessAdmin />;
       case "submissions-grading":
         return <SubmissionsGrading />;
+      case "live-broadcast":
+        return <LiveClassManager />;
       case "enrollments":
         return (
           <EnrollmentsList 
@@ -402,8 +407,6 @@ export default function ManagerDashboard() {
             }}
           />
         );
-      case "settings":
-        return <div className="p-8"><h2 className="text-2xl font-bold">Settings Under Development</h2></div>;
       case "notifications":
         return <NotificationSection />;
       case "student-performance":

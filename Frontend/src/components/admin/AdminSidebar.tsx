@@ -35,6 +35,7 @@ import {
   UserCheck,
   Trophy,
   Activity,
+  Radio,
   MessageSquare,
   Settings,
   Bell,
@@ -72,6 +73,7 @@ const navGroups = [
       { title: "Instructor Access", url: "/admin/instructor-access", icon: ShieldCheck },
       { title: "Instructors List", url: "/admin/instructors", icon: Award },
       { title: "Exam Schedule", url: "/admin/exam-scheduling", icon: Calendar },
+      { title: "Live Broadcast", url: "/admin/live-broadcast", icon: Radio },
     ],
   },
   {
@@ -95,7 +97,6 @@ const navGroups = [
     label: "System & Tools",
     items: [
       { title: "AI Hub", url: "/admin/ai-hub", icon: Zap },
-      { title: "Settings", url: "/admin/settings", icon: Settings },
       { title: "Notifications", url: "/admin/notifications", icon: Bell },
       { title: "Admin Profile", url: "/admin/profile", icon: User },
     ],

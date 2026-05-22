@@ -1271,12 +1271,6 @@ const routeConfig: Record<string, { title: string; description: string; icon: Re
     icon: MessageSquare,
     component: <ChatInterface />,
   },
-  "/student-dashboard/settings": {
-    title: "Preferences",
-    description: "Configure your digital learning environment",
-    icon: Settings,
-    component: <StudentSettings />,
-  },
 };
 
 import { RatingModal } from "./RatingModal";
