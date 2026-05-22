@@ -452,10 +452,7 @@ function ModuleItem({
                                         courseId={course.id}
                                     />
                                 </div>
-                                <div className="p-6 bg-slate-900 text-white">
-                                    <h3 className="text-lg font-bold mb-1">{previewingVideo.title}</h3>
-                                    <p className="text-xs text-slate-400">Google Drive Video Lesson Preview</p>
-                                </div>
+                                {/* Blue color bar removed as per user request */}
                             </div>
                         )}
                     </DialogContent>

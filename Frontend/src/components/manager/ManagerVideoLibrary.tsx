@@ -412,22 +412,7 @@ export function ManagerVideoLibrary({ showUpload = true, onSync, loading: parent
               <X className="h-6 w-6" />
             </Button>
           </div>
-          {selectedVideo && (
-            <div className="p-6 bg-slate-900 text-white border-t border-white/5">
-              <h3 className="text-xl font-bold mb-2">{selectedVideo.title}</h3>
-              <p className="text-slate-400 text-sm line-clamp-2">{selectedVideo.description}</p>
-              <div className="mt-4 flex items-center gap-3">
-                <Badge variant="outline" className="border-white/20 text-white/60">
-                  <BookOpen className="h-3 w-3 mr-1" />
-                  {getCourseTitle(selectedVideo.course_id)}
-                </Badge>
-                <Badge variant="outline" className="border-white/20 text-white/60">
-                  <Clock className="h-3 w-3 mr-1" />
-                  {selectedVideo.duration_minutes} min
-                </Badge>
-              </div>
-            </div>
-          )}
+          {/* Blue color bar removed as per user request */}
         </DialogContent>
       </Dialog>
     </div>

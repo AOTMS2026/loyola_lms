@@ -350,20 +350,7 @@ export default function StudentVideoLibrary() {
                                     onComplete={() => setRatingOpen(true)}
                                 />
                             </div>
-                            <div className="p-6 bg-slate-900 text-white">
-                                <h3 className="text-xl font-bold mb-2">{playingVideo.title}</h3>
-                                <div className="flex items-center justify-between text-sm text-slate-400">
-                                    <span className="flex items-center gap-1.5">
-                                        <Calendar className="h-4 w-4" />
-                                        Uploaded {new Date(playingVideo.created_at).toLocaleDateString()}
-                                    </span>
-                                    {progressMap.get(playingVideo.id)?.completed && (
-                                        <Badge className="bg-green-600 text-white border-none flex items-center gap-1">
-                                            <CheckCircle2 className="h-3 w-3" /> Completed
-                                        </Badge>
-                                    )}
-                                </div>
-                            </div>
+                            {/* Blue color bar removed as per user request */}
                         </div>
                     )}
                 </DialogContent>

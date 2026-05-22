@@ -296,8 +296,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, videoId, courseId
 
       {/* Persistent Bottom Progress Bar (only visible for non-Drive videos) */}
       {!isDrive && (
-        <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-white/10 z-10">
-          <div className="h-full bg-primary transition-all duration-300" style={{ width: `${currentProgress}%` }} />
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-10">
+          <div className="h-full bg-white/40 transition-all duration-300" style={{ width: `${currentProgress}%` }} />
         </div>
       )}
     </div>
