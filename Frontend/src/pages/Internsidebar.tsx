@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   Sidebar,
   SidebarContent,
@@ -19,17 +19,13 @@ import {
   BookOpen,
   Video,
   Calendar,
-  FileText,
-  ClipboardCheck,
-  ClipboardList,
   History,
-  Trophy,
   Bell,
   Settings,
   LogOut,
-  Zap,
   MessageSquare,
   Folder,
+  ClipboardCheck,
   Award,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,48 +38,41 @@ const navigationGroups = [
   {
     label: "General",
     items: [
-      { title: "Dashboard", url: "/student-dashboard", icon: LayoutDashboard },
-      { title: "My Profile", url: "/student-dashboard/profile", icon: User },
-      { title: "Messages", url: "/student-dashboard/chat", icon: MessageSquare },
+      { title: "Dashboard", url: "/intern-dashboard", icon: LayoutDashboard },
+      { title: "My Profile", url: "/intern-dashboard/profile", icon: User },
+      { title: "Messages", url: "/intern-dashboard/chat", icon: MessageSquare },
     ],
   },
   {
     label: "Learning Hub",
     items: [
-      { title: "My Courses", url: "/student-dashboard/courses", icon: BookOpen },
-      { title: "Video Lessons", url: "/student-dashboard/videos", icon: Video },
-      { title: "Live Classes", url: "/student-dashboard/live-classes", icon: Calendar },
-      { title: "Resources", url: "/student-dashboard/resources", icon: Folder },
-    ],
-  },
-  {
-    label: "Academic",
-    items: [
-      { title: "Resume ATS", url: "/student-dashboard/resume-ats", icon: Zap },
-      { title: "Mock Papers", url: "/student-dashboard/mock-papers", icon: FileText },
+      { title: "My Courses", url: "/intern-dashboard/courses", icon: BookOpen },
+      { title: "Video Lessons", url: "/intern-dashboard/videos", icon: Video },
+      { title: "Live Classes", url: "/intern-dashboard/live-classes", icon: Calendar },
+      { title: "Resources", url: "/intern-dashboard/resources", icon: Folder },
     ],
   },
   {
     label: "System",
     items: [
-      { title: "Attendance", url: "/student-dashboard/attendance", icon: ClipboardList },
-      { title: "History", url: "/student-dashboard/history", icon: History },
-      { title: "Notifications", url: "/student-dashboard/notifications", icon: Bell },
-      { title: "Settings", url: "/student-dashboard/settings", icon: Settings },
+      { title: "Attendance", url: "/intern-dashboard/attendance", icon: ClipboardCheck },
+      { title: "History", url: "/intern-dashboard/history", icon: History },
+      { title: "Notifications", url: "/intern-dashboard/notifications", icon: Bell },
+      { title: "Settings", url: "/intern-dashboard/settings", icon: Settings },
     ],
   },
 ];
 
-export function DashboardSidebar() {
+export function InternSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const { signOut } = useAuth();
   const { data: enrolledCourses } = useEnrolledCourses();
 
-  // Certificate enabled only if at least one course is 100% complete
+  // Certificate is enabled only if at least one course is 100% complete
   const hasCertificate = enrolledCourses?.some((c) => (c.progress ?? 0) >= 100) ?? false;
-  const certUrl = "/student-dashboard/certification";
+  const certUrl = "/intern-dashboard/certification";
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -104,7 +93,7 @@ export function DashboardSidebar() {
           />
           {!collapsed && (
             <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
-              Student Panel
+              Intern Panel
             </span>
           )}
         </Link>
@@ -145,9 +134,9 @@ export function DashboardSidebar() {
                             )}
                           />
                         </div>
-                        
+
                         {!collapsed && (
-                          <motion.span 
+                          <motion.span
                             className={cn(
                               "font-bold text-xs uppercase tracking-wider z-10",
                               isActive(item.url) ? "text-white" : "group-hover:text-primary"
@@ -160,8 +149,8 @@ export function DashboardSidebar() {
                         )}
 
                         {isActive(item.url) && (
-                          <motion.div 
-                            layoutId="active-pill-student"
+                          <motion.div
+                            layoutId="active-pill-intern"
                             className="absolute inset-0 bg-primary z-0"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -176,7 +165,7 @@ export function DashboardSidebar() {
           </SidebarGroup>
         ))}
 
-        {/* ── Certification (last group, conditional unlock) ── */}
+        {/* ── Certification (last item, conditional) ── */}
         <SidebarGroup className="p-0">
           {!collapsed && (
             <SidebarGroupLabel className="px-4 text-[10px] uppercase font-bold tracking-[0.2em] text-slate-400 p-0 h-auto mb-3">
@@ -189,7 +178,7 @@ export function DashboardSidebar() {
                 <SidebarMenuButton
                   asChild={hasCertificate}
                   isActive={isActive(certUrl)}
-                  tooltip={hasCertificate ? "Certification" : "Complete a course to unlock"}
+                  tooltip="Certification"
                   className={cn(
                     "h-12 px-4 rounded-xl transition-all duration-300 group relative overflow-hidden",
                     isActive(certUrl)
@@ -204,14 +193,14 @@ export function DashboardSidebar() {
                       <Award
                         className={cn(
                           "h-[1.125rem] w-[1.125rem] transition-all duration-300 relative z-10",
-                          isActive(certUrl) ? "text-white scale-110" : "text-amber-500 group-hover:text-amber-700"
+                          isActive(certUrl) ? "text-white scale-110" : "text-amber-500"
                         )}
                       />
                       {!collapsed && (
                         <motion.span
                           className={cn(
                             "font-bold text-xs uppercase tracking-wider z-10",
-                            isActive(certUrl) ? "text-white" : "text-amber-600 group-hover:text-amber-700"
+                            isActive(certUrl) ? "text-white" : "text-amber-600"
                           )}
                           initial={{ opacity: 0, x: -5 }}
                           animate={{ opacity: 1, x: 0 }}
@@ -221,7 +210,7 @@ export function DashboardSidebar() {
                       )}
                       {isActive(certUrl) && (
                         <motion.div
-                          layoutId="active-pill-student-cert"
+                          layoutId="active-pill-intern-cert"
                           className="absolute inset-0 bg-amber-500 z-0"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}

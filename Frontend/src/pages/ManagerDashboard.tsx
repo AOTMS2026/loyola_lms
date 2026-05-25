@@ -231,9 +231,9 @@ export default function ManagerDashboard() {
     }
   }, [location.pathname]);
 
-  const { data: exams = [] } = useExams();
-  const { data: questions = [] } = useQuestions();
-  const { data: leaderboard = [] } = useLeaderboard();
+  const { data: exams = [], isLoading: examsLoading } = useExams();
+  const { data: questions = [], isLoading: questionsLoading } = useQuestions();
+  const { data: leaderboard = [], isLoading: leaderboardLoading } = useLeaderboard();
 
   const {
     courses,
@@ -244,13 +244,17 @@ export default function ManagerDashboard() {
     toggleCourseActive,
     updateCoursePrice,
     updateEnrollmentStatus,
+    updateEnrollmentPayment,
     deleteEnrollment,
     enrollments,
     profiles,
+    stats,
     updateUserStatus,
     updateUserRole,
     sendApprovalEmail,
-    resetStudentATS
+    resetStudentATS,
+    deleteUser,
+    refresh,
   } = useAdminData(userRole);
 
 
@@ -271,7 +275,8 @@ export default function ManagerDashboard() {
   }
 
   if (userRole !== "manager" && userRole !== "admin") {
-    return <Navigate to="/student-dashboard" replace />;
+    const fallback = userRole === "intern" ? "/intern-dashboard" : "/student-dashboard";
+    return <Navigate to={fallback} replace />;
   }
 
   const navTabs = [
@@ -281,7 +286,10 @@ export default function ManagerDashboard() {
     { id: "enrollments",         title: "Enrollments Hub",     url: "/manager/enrollments",         icon: DbIcon },
     { id: "submissions-grading", title: "Submissions Grading", url: "/manager/submissions-grading", icon: ClipboardList },
     { id: "live-broadcast",      title: "Live Broadcast",      url: "/manager/live-broadcast",      icon: Radio },
-
+    { id: "exams",               title: "Exam Scheduling",     url: "/manager/exams",               icon: Calendar },
+    { id: "questions",           title: "Question Bank",       url: "/manager/questions",           icon: FileQuestion },
+    { id: "question-access",     title: "Question Access",     url: "/manager/question-access",     icon: ShieldCheck },
+    { id: "leaderboard",         title: "Leaderboard",         url: "/manager/leaderboard",         icon: Trophy },
     { id: "coupons",             title: "Rewards & Coupons",   url: "/manager/coupons",             icon: Trophy },
     { id: "grant-access",        title: "Grant Access",        url: "/manager/grant-access",        icon: KeyRound },
     { id: "resume-scans",        title: "Resume Scans",        url: "/manager/resume-scans",        icon: ClipboardList },
@@ -317,15 +325,67 @@ export default function ManagerDashboard() {
   );
 
   const renderOverview = () => (
-    <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-in fade-in duration-500">
-      <div className="space-y-1">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Manager Dashboard</h1>
-        <p className="text-slate-500 font-medium">Welcome back, Manager. Here's what's happening today.</p>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="space-y-1">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Manager Dashboard</h1>
+          <p className="text-slate-500 font-medium">Welcome back, Manager. Here's what's happening today.</p>
+        </div>
+        <Button className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20" onClick={() => navigate('/manager/exams')}>
+          <Plus className="h-4 w-4" />
+          <span>New Exam</span>
+        </Button>
       </div>
-      <Button className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20" onClick={() => navigate('/manager/exams')}>
-        <Plus className="h-4 w-4" />
-        <span>New Exam</span>
-      </Button>
+
+      {/* Platform Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: "Total Users",     value: stats.totalUsers,          icon: Users,      color: "text-blue-600",   bg: "bg-blue-50",   action: () => navigate('/manager/users') },
+          { label: "Active Courses",  value: stats.activeCourses,       icon: BookOpen,   color: "text-green-600",  bg: "bg-green-50",  action: () => navigate('/manager/all-courses') },
+          { label: "Enrollments",     value: enrollments.length,        icon: Activity,   color: "text-purple-600", bg: "bg-purple-50", action: () => navigate('/manager/enrollments') },
+          { label: "Pending Reviews", value: stats.pendingEnrollments,  icon: Clock,      color: "text-amber-600",  bg: "bg-amber-50",  action: () => navigate('/manager/enrollments') },
+        ].map((card, i) => (
+          <Card key={i} className="border-none shadow-sm bg-white cursor-pointer hover:shadow-md transition-all" onClick={card.action}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center shrink-0", card.bg)}>
+                <card.icon className={cn("h-5 w-5", card.color)} />
+              </div>
+              <div>
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{card.label}</p>
+                {dataLoading ? (
+                  <div className="h-5 w-10 bg-slate-100 animate-pulse rounded mt-0.5" />
+                ) : (
+                  <h4 className="text-lg font-black text-slate-900 leading-none">{card.value}</h4>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Role distribution */}
+      <Card className="border-none shadow-sm bg-white">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-bold text-slate-600 uppercase tracking-wider flex items-center gap-2">
+            <Users className="h-4 w-4" /> User Role Distribution
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { role: 'Students',    count: roleCounts.student || 0,    color: 'bg-blue-100 text-blue-800' },
+              { role: 'Interns',     count: roleCounts.intern || 0,     color: 'bg-amber-100 text-amber-800' },
+              { role: 'Instructors', count: roleCounts.instructor || 0, color: 'bg-green-100 text-green-800' },
+              { role: 'Managers',    count: roleCounts.manager || 0,    color: 'bg-purple-100 text-purple-800' },
+            ].map((r) => (
+              <div key={r.role} className={`rounded-xl px-4 py-3 ${r.color} flex justify-between items-center`}>
+                <span className="text-xs font-bold">{r.role}</span>
+                <span className="text-xl font-black">{r.count}</span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 
@@ -345,6 +405,7 @@ export default function ManagerDashboard() {
             onUpdateStatus={updateUserStatus}
             onUpdateRole={updateUserRole}
             onSendEmail={sendApprovalEmail}
+            onDeleteUser={async (userId) => { return await deleteUser(userId); }}
             onUpdateEnrollmentStatus={async (id, status) => { await updateEnrollmentStatus(id, status); }}
             onResetATS={async (userId) => { await resetStudentATS(userId); }}
           />
@@ -352,20 +413,21 @@ export default function ManagerDashboard() {
 
       case "exams":
 
-        return <ExamScheduler />;
+        return <ExamScheduler onNavigateToRepository={() => setActiveSection('questions')} onSync={() => refresh()} loading={dataLoading} />;
       case "questions":
-        return <QuestionBankManager />;
+        return <QuestionBankManager onSync={() => refresh()} loading={dataLoading} />;
       case "leaderboard":
-        return <LeaderboardManager />;
+        return <LeaderboardManager onSync={() => refresh()} loading={dataLoading} />;
       case "monitoring":
-        return <LiveMonitoring />;
+        return <LiveMonitoring onSync={() => refresh()} loading={dataLoading} />;
       case "video-library":
-        return <ManagerVideoLibrary />;
+        return <ManagerVideoLibrary onSync={() => refresh()} loading={dataLoading} />;
       case "all-courses":
         return (
           <AllCoursesList 
             courses={courses} 
             loading={dataLoading} 
+            onSync={() => refresh()}
             onUpdatePrice={updateCoursePrice}
             onToggleActive={toggleCourseActive}
             onViewSyllabus={(course) => {
@@ -379,19 +441,19 @@ export default function ManagerDashboard() {
           />
         );
       case "question-access":
-        return <QuestionBankApproval />;
+        return <QuestionBankApproval onSync={() => refresh()} loading={dataLoading} />;
       case "instructors":
-        return <InstructorManagement />;
+        return <InstructorManagement onSync={() => refresh()} loading={dataLoading} />;
       case "coupons":
-        return <CouponManager />;
+        return <CouponManager onSync={() => refresh()} loading={dataLoading} />;
       case "grant-access":
-        return <GrantStudentAccess />;
+        return <GrantStudentAccess profiles={profiles} enrollments={enrollments as unknown as CourseEnrollment[]} onSync={() => refresh()} loading={dataLoading} />;
       case "resume-scans":
         return <ResumeScanHistory />;
       case "instructor-access":
-        return <InstructorAccessAdmin />;
+        return <InstructorAccessAdmin onSync={() => refresh()} loading={dataLoading} />;
       case "submissions-grading":
-        return <SubmissionsGrading />;
+        return <SubmissionsGrading onSync={() => refresh()} loading={dataLoading} />;
       case "live-broadcast":
         return <LiveClassManager />;
       case "enrollments":
@@ -402,15 +464,18 @@ export default function ManagerDashboard() {
             onUpdateStatus={async (id, status) => { 
                 await updateEnrollmentStatus(id, status); 
             }}
+            onUpdatePayment={async (id, term) => { await updateEnrollmentPayment(id, term); }}
             onDelete={async (id) => { 
                 await deleteEnrollment(id); 
             }}
+            onResetATS={async (userId) => { await resetStudentATS(userId); }}
+            onSync={() => refresh()}
           />
         );
       case "notifications":
         return <NotificationSection />;
       case "student-performance":
-        return <StudentPerformance />;
+        return <StudentPerformance enrollments={[]} onSync={() => refresh()} loading={dataLoading} />;
       case "ai-hub":
         return <AICommunicationHub profiles={profiles} loading={dataLoading} />;
       default:
@@ -443,11 +508,11 @@ export default function ManagerDashboard() {
             {/* Persistent Stats Header — always visible */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 sm:gap-6">
               {[
-                { label: "EXAMS",          value: exams.length,      icon: Calendar,     color: "text-blue-600",   bg: "bg-blue-50" },
-                { label: "QUESTION BANK",  value: questions.length,   icon: FileQuestion, color: "text-purple-600", bg: "bg-purple-50" },
-                { label: "LEADERBOARD",    value: leaderboard.length, icon: Trophy,       color: "text-amber-600", bg: "bg-amber-50" },
-                { label: "LIVE LEARNERS",  value: liveLearners,       icon: Users,        color: "text-emerald-600",bg: "bg-emerald-50" },
-                { label: "SYSTEM STATUS",  value: `${systemHealth}%`, icon: ShieldCheck,  color: "text-rose-600",   bg: "bg-rose-50" },
+                { label: "EXAMS",          value: exams.length,      loading: examsLoading,        icon: Calendar,     color: "text-blue-600",   bg: "bg-blue-50" },
+                { label: "QUESTION BANK",  value: questions.length,   loading: questionsLoading,    icon: FileQuestion, color: "text-purple-600", bg: "bg-purple-50" },
+                { label: "LEADERBOARD",    value: leaderboard.length, loading: leaderboardLoading,  icon: Trophy,       color: "text-amber-600",  bg: "bg-amber-50" },
+                { label: "LIVE LEARNERS",  value: liveLearners,       loading: false,               icon: Users,        color: "text-emerald-600",bg: "bg-emerald-50" },
+                { label: "SYSTEM STATUS",  value: `${systemHealth}%`, loading: false,               icon: ShieldCheck,  color: "text-rose-600",   bg: "bg-rose-50" },
               ].map((stat, i) => (
                 <Card key={i} className="border-none shadow-sm bg-white/50 backdrop-blur-sm group hover:scale-[1.02] transition-transform">
                   <CardContent className="p-4 sm:p-6 flex items-center gap-4 sm:gap-6">
@@ -456,7 +521,11 @@ export default function ManagerDashboard() {
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</p>
-                      <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-none">{stat.value}</h3>
+                      {stat.loading ? (
+                        <div className="h-7 w-12 bg-slate-100 animate-pulse rounded-md" />
+                      ) : (
+                        <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-none">{stat.value}</h3>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

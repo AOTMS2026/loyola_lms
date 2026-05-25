@@ -58,10 +58,16 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
 
+  // Helper: treat intern same as student for tab matching
+  const getRoleTab = (role: string | undefined) => {
+    const r = role || "student";
+    return r === "intern" ? "student" : r;
+  };
+
   // Get unique colleges for filtering
   const colleges = useMemo(() => {
     const all = profiles
-      .filter(p => (p.role || "student") === activeTab)
+      .filter(p => getRoleTab(p.role) === activeTab)
       .map(p => p.college_name)
       .filter((c): c is string => !!c);
     return Array.from(new Set(all)).sort();
@@ -70,15 +76,14 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
   // Filtered users based on role, search, and college
   const filteredUsers = useMemo(() => {
     return profiles.filter(p => {
-      const role = p.role || "student";
-      const matchesRole = role === activeTab;
-      const matchesSearch = 
+      const matchesRole = getRoleTab(p.role) === activeTab;
+      const matchesSearch =
         p.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.email?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCollege = 
-        selectedColleges.length === 0 || 
+      const matchesCollege =
+        selectedColleges.length === 0 ||
         (p.college_name && selectedColleges.includes(p.college_name));
-      
+
       return matchesRole && matchesSearch && matchesCollege;
     });
   }, [profiles, activeTab, searchQuery, selectedColleges]);
@@ -113,35 +118,47 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
       toast.error("Please select at least one recipient");
       return;
     }
-    if (!subject || !message) {
-      toast.error("Subject and Message are required");
+    if (!subject.trim()) {
+      toast.error("Email subject is required");
+      return;
+    }
+    if (!message.trim()) {
+      toast.error("Message content is required");
       return;
     }
 
     setIsSending(true);
-    const tId = toast.loading(`Sending broadcast to ${selectedUsers.length} ${activeTab}s...`);
+    const tId = toast.loading(`Sending broadcast to ${selectedUsers.length} recipient${selectedUsers.length !== 1 ? 's' : ''}...`);
 
     try {
-      await fetchWithAuth("/admin/broadcast", {
+      const result = await fetchWithAuth<{ success: boolean; message: string; succeeded?: number; failed?: number }>("/admin/broadcast", {
         method: "POST",
         body: JSON.stringify({
           type: activeTab,
-          selectedUsers, // IDs
+          selectedUsers,   // MongoDB ObjectId strings
           category,
-          subject,
-          message,
+          subject: subject.trim(),
+          message: message.trim(),
           timestamp: new Date().toISOString()
         })
       });
 
-      toast.success("Broadcast initiated! n8n workflow triggered.", { id: tId });
-      // Reset form or selection?
-      setSelectedUsers([]);
-      setSubject("");
-      setMessage("");
+      if (result?.succeeded === 0 && (result?.failed ?? 0) > 0) {
+        toast.error(`Broadcast failed: n8n webhook rejected all requests. Check if the n8n workflow is active.`, { id: tId });
+      } else if ((result?.failed ?? 0) > 0) {
+        toast.warning(`Broadcast partially sent: ${result?.succeeded} succeeded, ${result?.failed} failed.`, { id: tId });
+      } else {
+        toast.success(result?.message || `Broadcast sent to ${result?.succeeded ?? selectedUsers.length} recipients!`, { id: tId });
+        // Reset form after successful send
+        setSelectedUsers([]);
+        setSubject("");
+        setMessage("");
+      }
     } catch (err) {
       const error = err as Error;
-      toast.error(error.message || "Failed to initiate broadcast", { id: tId });
+      const errMsg = error.message || "Failed to initiate broadcast";
+      toast.error(errMsg, { id: tId });
+      console.error("[Broadcast] Error:", error);
     } finally {
       setIsSending(false);
     }
@@ -210,7 +227,7 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
                   <div>
                     <CardTitle className="text-lg font-black text-slate-900 leading-none mb-1">Select Recipients</CardTitle>
                     <CardDescription className="text-xs font-bold text-slate-400">
-                      {filteredUsers.length} total {activeTab}s available for selection.
+                      {filteredUsers.length} total {activeTab === "student" ? "students & interns" : activeTab + "s"} available for selection.
                     </CardDescription>
                   </div>
                 </div>
@@ -329,11 +346,18 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
                              <Mail className="h-2.5 w-2.5 opacity-40" />
                              {user.email}
                           </p>
-                          {user.college_name && (
-                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter block mt-1">
-                              {user.college_name.slice(0, 20)}{user.college_name.length > 20 ? '...' : ''}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 mt-1">
+                            {user.role === "intern" && (
+                              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 uppercase tracking-tight">
+                                Intern
+                              </span>
+                            )}
+                            {user.college_name && (
+                              <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter truncate">
+                                {user.college_name.slice(0, 20)}{user.college_name.length > 20 ? '...' : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -421,7 +445,7 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
                   <div className="space-y-0.5">
                     <p className="text-[10px] font-black uppercase text-indigo-700 tracking-wider">Broadcast Summary</p>
                     <p className="text-[11px] font-medium text-slate-600 leading-tight">
-                       You are about to send a <strong>{category}</strong> notification to <strong>{selectedUsers.length}</strong> selected {activeTab}s. This action will trigger an automated n8n workflow for delivery.
+                       You are about to send a <strong>{category}</strong> notification to <strong>{selectedUsers.length}</strong> selected recipient{selectedUsers.length !== 1 ? 's' : ''}. This action will trigger an automated n8n workflow for delivery.
                     </p>
                   </div>
                 </div>

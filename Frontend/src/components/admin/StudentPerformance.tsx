@@ -470,7 +470,7 @@ export function StudentPerformance({
     try {
       // /admin/users returns merged User+Profile+UserRole data — same source as UserManagement
       const usersData = await fetchWithAuth<StudentProfile[]>("/admin/students");
-      const studentsOnly = (usersData || []).filter(u => u.role === 'student' || !u.role);
+      const studentsOnly = (usersData || []).filter(u => u.role === 'student' || u.role === 'intern' || !u.role);
       // Map to expected shape (admin/students returns user records with profile joined)
       const mapped = studentsOnly.map(u => ({
         ...u,
@@ -756,6 +756,10 @@ export function StudentPerformance({
                                     —
                                  </Badge>
                               )}
+                              {/* Role badge — always show INTERN or STUDENT */}
+                              <Badge className={`border-none font-black text-[9px] px-3 py-1 rounded-full uppercase tracking-widest ${stu.role === 'intern' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {stu.role === 'intern' ? '🎓 Intern' : 'Student'}
+                              </Badge>
                             </div>
                           </div>
                         </div>

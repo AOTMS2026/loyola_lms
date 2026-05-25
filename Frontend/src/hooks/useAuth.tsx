@@ -28,7 +28,7 @@ interface AuthContextType {
   session: Session | null;
   userRole: UserRole | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, phone?: string, collegeName?: string, instituteName?: string, locationData?: { city?: string; district?: string; country?: string; fullAddress?: string; latitude?: number; longitude?: number }) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, phone?: string, courseType?: string, collegeName?: string, locationData?: { city?: string; district?: string; country?: string; fullAddress?: string; latitude?: number; longitude?: number }) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null; requiresAdminOtp?: boolean }>;
   verifyAdminOtp: (email: string, otp: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => clearInterval(interval);
   }, [user?.id, checkSession]);
 
-  const signUp = useCallback(async (email: string, password: string, fullName: string, phone?: string, collegeName?: string, instituteName?: string, locationData?: { city?: string; district?: string; country?: string; fullAddress?: string; latitude?: number; longitude?: number }) => {
+  const signUp = useCallback(async (email: string, password: string, fullName: string, phone?: string, courseType?: string, collegeName?: string, locationData?: { city?: string; district?: string; country?: string; fullAddress?: string; latitude?: number; longitude?: number }) => {
     try {
       const res = await fetch(`${API_URL}/auth/signup`, {
         method: 'POST',
@@ -198,8 +198,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password, 
           fullName, 
           phone, 
-          collegeName, 
-          instituteName,
+          courseType,
+          collegeName,
           city: locationData?.city,
           district: locationData?.district,
           country: locationData?.country,
@@ -224,11 +224,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (newUser) {
           localStorage.setItem('user', JSON.stringify(newUser));
         }
-        localStorage.setItem('user_role', 'student');
+        // Use the role returned by the server (intern for internship, student for full_time)
+        const signupRole = data.user?.role || 'student';
+        localStorage.setItem('user_role', signupRole);
 
         setUser(newUser);
         setSession(data.session);
-        setUserRole('student');
+        setUserRole(signupRole as UserRole);
       }
       return { error: null };
     } catch (error: unknown) {

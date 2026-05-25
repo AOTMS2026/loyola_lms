@@ -16,6 +16,7 @@ import Home from "./pages/Home";
 import Auth from "./pages/Auth";
 import InstructorRegister from "./pages/InstructorRegister";
 import Dashboard from "./pages/Dashboard";
+import InternDashboard from "./pages/Interndashboard";
 import InstructorDashboard from "./pages/InstructorDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import ManagerDashboard from "./pages/ManagerDashboard";
@@ -60,6 +61,7 @@ const BackNavigationHandler = () => {
     const handlePopState = (event: PopStateEvent) => {
       const dashboardMap: Record<string, string> = {
         student: "/student-dashboard",
+        intern: "/intern-dashboard",
         instructor: "/instructor",
         admin: "/admin",
         manager: "/manager",
@@ -75,14 +77,14 @@ const BackNavigationHandler = () => {
       }
     };
 
-    // Commenting out pushState as it interferes with React Router 6.
-    // window.history.pushState(null, "", window.location.href);
+    // Add a state to history so we can intercept the back button
+    window.history.pushState(null, "", window.location.href);
     window.addEventListener("popstate", handlePopState);
 
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [userRole, user, loading, navigate, location.pathname]);
+  }, [user, userRole, loading, navigate, location.pathname]);
 
   return null;
 };
@@ -99,6 +101,7 @@ const RoleRedirector = () => {
     // Redirection Map
     const dashboardMap: Record<string, string> = {
       student: "/student-dashboard",
+      intern: "/intern-dashboard",
       instructor: "/instructor",
       admin: "/admin",
       manager: "/manager",
@@ -116,20 +119,23 @@ const RoleRedirector = () => {
       }
     }
     // 2. Handle Initial Load / Wrong Page
-    // Only redirect away from /auth if already logged in.
-    // We stay on '/' (Home) because the user wants to see the landing page even when logged in.
     else if (location.pathname === "/auth") {
       if (target) navigate(target);
     }
-    // Force specific redirection for non-students if they wander into the student area
-    // This ensures that when a role changes (e.g. Student -> Instructor), they are bumped to their portal
+    // Force specific redirection for non-students/non-interns if they wander into wrong area
     else if (
       userRole !== "student" &&
       location.pathname.startsWith("/student-dashboard")
     ) {
-      // Allow admins to view student dashboard if explicitly needed, but for now we redirect
-      // to ensure the "role change" creates a visible "rooting change"
       if (target && target !== "/student-dashboard") {
+        navigate(target);
+      }
+    }
+    else if (
+      userRole !== "intern" &&
+      location.pathname.startsWith("/intern-dashboard")
+    ) {
+      if (target && target !== "/intern-dashboard") {
         navigate(target);
       }
     }
@@ -235,6 +241,26 @@ const App = () => (
                 }
               />
               <Route
+                path="/intern-dashboard"
+                element={
+                  <ProtectedRoute
+                    allowedRoles={["intern", "admin"]}
+                  >
+                    <InternDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/intern-dashboard/*"
+                element={
+                  <ProtectedRoute
+                    allowedRoles={["intern", "admin"]}
+                  >
+                    <InternDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/instructor"
                 element={
                   <ProtectedRoute allowedRoles={["instructor", "admin"]}>
@@ -263,6 +289,14 @@ const App = () => (
                 element={
                   <ProtectedRoute allowedRoles={["admin"]}>
                     <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/manager"
+                element={
+                  <ProtectedRoute allowedRoles={["manager", "admin"]}>
+                    <ManagerDashboard />
                   </ProtectedRoute>
                 }
               />

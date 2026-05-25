@@ -35,7 +35,8 @@ export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) 
 
                 const isApproved = ['approved', 'active', 'approve'].includes((user.approval_status || '').toLowerCase());
                 if (isApproved && pathname === '/pending-approval') {
-                    navigate('/student-dashboard');
+                    const approvedDashboard = userRole === 'intern' ? '/intern-dashboard' : '/student-dashboard';
+                    navigate(approvedDashboard);
                     return;
                 }
             }
@@ -44,6 +45,7 @@ export const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) 
             if (allowedRoles && userRole && !allowedRoles.includes(userRole)) {
                 const dashboardMap: Record<string, string> = {
                   student: "/student-dashboard",
+                  intern: "/intern-dashboard",
                   instructor: "/instructor",
                   admin: "/admin",
                   manager: "/manager"

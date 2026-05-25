@@ -128,7 +128,7 @@ interface UserManagementProps {
   ) => Promise<boolean>;
   onUpdateRole: (
     userId: string,
-    role: "admin" | "manager" | "instructor" | "student",
+    role: "admin" | "manager" | "instructor" | "student" | "intern",
   ) => Promise<boolean>;
   onSendEmail: (userId: string) => Promise<boolean>;
   onUpdateEnrollmentStatus?: (id: string, status: "rejected" | "active") => Promise<void>;
@@ -360,7 +360,7 @@ export function UserManagement({
     if (selectedUser && newRole) {
       await onUpdateRole(
         selectedUser.id,
-        newRole as "admin" | "manager" | "instructor" | "student",
+        newRole as "admin" | "manager" | "instructor" | "student" | "intern",
       );
       setShowRoleDialog(false);
       setSelectedUser(null);
@@ -458,6 +458,7 @@ export function UserManagement({
                   <SelectItem value="manager" className="text-xs font-bold py-2">MANAGERS</SelectItem>
                   <SelectItem value="instructor" className="text-xs font-bold py-2">INSTRUCTORS</SelectItem>
                   <SelectItem value="student" className="text-xs font-bold py-2">STUDENTS</SelectItem>
+                  <SelectItem value="intern" className="text-xs font-bold py-2">INTERNS</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -517,9 +518,15 @@ export function UserManagement({
                         </p>
                         <Badge
                           variant="outline"
-                          className="shrink-0 text-[10px] h-6 px-2.5 rounded-lg uppercase font-black tracking-tight border border-slate-100 bg-slate-50 text-slate-900 shadow-sm"
+                          className={`shrink-0 text-[10px] h-6 px-2.5 rounded-lg uppercase font-black tracking-tight border shadow-sm ${
+                            user.role === 'intern'
+                              ? 'border-amber-200 bg-amber-50 text-amber-800'
+                              : user.role === 'student'
+                              ? 'border-blue-100 bg-blue-50 text-blue-900'
+                              : 'border-slate-100 bg-slate-50 text-slate-900'
+                          }`}
                         >
-                          {user.role || "student"}
+                          {user.role === 'intern' ? '🎓 Intern' : user.role || "student"}
                         </Badge>
                       </div>
                       <p className="text-xs text-slate-500 font-bold truncate flex items-center gap-2">
@@ -653,31 +660,31 @@ export function UserManagement({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { label: "Students", count: roleCounts.student || 0, color: "bg-slate-900", icon: Users, desc: "Registered student profiles" },
-            { label: "Instructors", count: roleCounts.instructor || 0, color: "bg-blue-600", icon: Presentation, desc: "Course & content management" },
-            { label: "Managers", count: roleCounts.manager || 0, color: "bg-amber-500", icon: UserCog, desc: "Operational management team" },
-            { label: "Admins", count: roleCounts.admin || 0, color: "bg-rose-500", icon: Shield, desc: "Full system security access", isHigh: true },
+            { label: "Students",    count: roleCounts.student    || 0, icon: Users,        desc: "Full-time registered students",     accent: "bg-blue-50",   iconColor: "text-blue-600" },
+            { label: "Interns",     count: roleCounts.intern     || 0, icon: Briefcase,    desc: "Internship programme students",     accent: "bg-amber-50",  iconColor: "text-amber-600" },
+            { label: "Instructors", count: roleCounts.instructor || 0, icon: Presentation, desc: "Course & content management",       accent: "bg-emerald-50",iconColor: "text-emerald-600" },
+            { label: "Managers",    count: roleCounts.manager    || 0, icon: UserCog,      desc: "Operational management team",       accent: "bg-purple-50", iconColor: "text-purple-600" },
           ].map((role) => (
-            <Card key={role.label} className={`border-none shadow-xl shadow-slate-200/50 rounded-[2rem] overflow-hidden group transition-all duration-500 hover:-translate-y-2 ${role.isHigh ? 'bg-primary shadow-primary/30' : 'bg-white'}`}>
+            <Card key={role.label} className="border-none shadow-xl shadow-slate-200/50 rounded-[2rem] overflow-hidden group transition-all duration-500 hover:-translate-y-2 bg-white">
               <CardContent className="p-8">
                 <div className="flex justify-between items-start mb-8">
-                  <div className={`h-12 w-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 group-hover:rotate-12 ${role.isHigh ? 'bg-white/20' : 'bg-slate-50'}`}>
-                    <role.icon className={`h-6 w-6 ${role.isHigh ? 'text-white' : 'text-slate-600'}`} />
+                  <div className={`h-12 w-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-500 group-hover:rotate-12 ${role.accent}`}>
+                    <role.icon className={`h-6 w-6 ${role.iconColor}`} />
                   </div>
-                  <div className={`h-2 w-2 rounded-full animate-ping ${role.isHigh ? 'bg-white/40' : 'bg-emerald-500/40'}`} />
+                  <div className="h-2 w-2 rounded-full animate-ping bg-emerald-500/40" />
                 </div>
                 
                 <div className="space-y-1">
-                  <h5 className={`text-[10px] font-black uppercase tracking-[0.2em] ${role.isHigh ? 'text-white/90' : 'text-slate-900'}`}>
+                  <h5 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900">
                     {role.label}
                   </h5>
                   <div className="flex items-baseline gap-2">
-                    <span className={`text-3xl font-black tracking-tighter ${role.isHigh ? 'text-white' : 'text-slate-900'}`}>
+                    <span className="text-3xl font-black tracking-tighter text-slate-900">
                       {role.count}
                     </span>
-                    <span className={`text-[11px] font-bold ${role.isHigh ? 'text-white/70' : 'text-slate-900'}`}>Users</span>
+                    <span className="text-[11px] font-bold text-slate-500">Users</span>
                   </div>
-                  <p className={`text-[11px] font-medium pt-3 border-t mt-4 border-white/10 ${role.isHigh ? 'text-white/90' : 'text-slate-900 border-slate-50'}`}>
+                  <p className="text-[11px] font-medium pt-3 border-t mt-4 border-slate-50 text-slate-500">
                     {role.desc}
                   </p>
                 </div>
@@ -718,7 +725,13 @@ export function UserManagement({
                     value="student"
                     className="rounded-lg h-10 font-medium hover:bg-slate-50"
                   >
-                    Student
+                    Student (Full-Time)
+                  </SelectItem>
+                  <SelectItem
+                    value="intern"
+                    className="rounded-lg h-10 font-medium hover:bg-slate-50"
+                  >
+                    Intern (Internship)
                   </SelectItem>
                   <SelectItem
                     value="instructor"
@@ -1254,6 +1267,23 @@ export function UserManagement({
                   Change Role
                 </Button>
 
+                {/* Dashboard Access Button — routes based on role */}
+                {(selectedUser.role === 'student' || selectedUser.role === 'intern') && (
+                  <a
+                    href={selectedUser.role === 'intern' ? '/intern-dashboard' : '/student-dashboard'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1"
+                  >
+                    <Button variant="outline" className={`w-full ${selectedUser.role === 'intern' ? 'border-amber-200 text-amber-700 hover:bg-amber-50' : 'border-blue-200 text-blue-700 hover:bg-blue-50'}`}>
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      {selectedUser.role === 'intern' ? 'Intern Dashboard' : 'Student Dashboard'}
+                    </Button>
+                  </a>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-1">
                 {selectedUser.status === 'suspended' ? (
                   <Button
                     variant="outline"

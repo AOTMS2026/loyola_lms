@@ -969,7 +969,7 @@ export function ChatInterface() {
                   </div>
                 )}
 
-                {contactProfile?.role === 'student' && (
+                {(contactProfile?.role === 'student' || contactProfile?.role === 'intern') && (
                    <div className="bg-white p-4 shadow-sm mb-3 space-y-4">
                       <h4 className="text-[#667781] text-sm font-medium">Student Progress</h4>
                       

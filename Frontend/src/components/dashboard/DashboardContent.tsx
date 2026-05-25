@@ -31,6 +31,7 @@ import {
   User,
   Video,
   ClipboardCheck,
+  ClipboardList,
   History,
   Bell,
   Settings,
@@ -58,14 +59,12 @@ import {
   Hash,
   Ticket,
   Zap,
-  Key,
-  ClipboardList
+  Key
 } from "lucide-react";
 import { UserProfile } from "./UserProfile";
 import { CourseList } from "./CourseList";
 import { StudentCourseViewer } from "./StudentCourseViewer";
 import { StudentHistory } from "./StudentHistory";
-import { StudentAttendance } from "./StudentAttendance";
 import StudentResources from "./StudentResources";
 import StudentVideoLibrary from "./StudentVideoLibrary";
 import { ExamModule } from "./ExamModule";
@@ -74,6 +73,8 @@ import { StudentSettings } from "./StudentSettings";
 import { StudentResumeScan } from "./StudentResumeScan";
 import { StudentBatchSelector } from "./StudentBatchSelector";
 import { ChatInterface } from "../chat/ChatInterface";
+import CertificationPage from "./CertificationPage";
+import { StudentAttendance } from "./StudentAttendance";
 import {
   StudentCourse,
   useStudentAnnouncements,
@@ -83,7 +84,6 @@ import {
   useEnrolledCourses,
   useEnrollCourse,
   useStudentDashboardData,
-  useAvailableBatches,
   Announcement,
   LeaderboardEntry,
   LiveClass,
@@ -103,9 +103,9 @@ import { useToast } from "@/components/ui/use-toast";
 // ─── Shared Components ────────────────────────────────────────────────────────
 
 function CoursesTab() {
+  const [viewingCourse, setViewingCourse] = useState<StudentCourse | null>(null);
   const [courseTab, setCourseTab] = useState<'enrolled' | 'available'>('enrolled');
   const { toast } = useToast();
-  const navigate = useNavigate();
   const enrollMutation = useEnrollCourse();
 
   // Payment Modal States
@@ -118,9 +118,6 @@ function CoursesTab() {
   const [utrNumber, setUtrNumber] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [paymentTerm, setPaymentTerm] = useState<'full' | 'term1' | 'term2'>('full');
-  const [selectedBatchType, setSelectedBatchType] = useState<'morning' | 'afternoon' | 'evening' | 'all'>('morning');
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
-  const { data: batches, isLoading: batchesLoading } = useAvailableBatches(paymentCourse?.id || null);
 
   const getEffectivePrice = () => {
     return (appliedPrice !== null ? appliedPrice : (paymentCourse?.price || 0)) as number;
@@ -129,43 +126,15 @@ function CoursesTab() {
   const term1Amount = Math.round(getEffectivePrice() * 0.6);
   const term2Amount = getEffectivePrice() - term1Amount;
 
-  useEffect(() => {
-    const handleOpenPayment = (e: CustomEvent<{ course: StudentCourse }>) => {
-      const course = e.detail.course;
-      
-      setPaymentCourse(course);
-      
-      // Determine payment term based on current enrollment status
-      if (course?.enrollmentStatus === 'active' || course?.enrollmentStatus === 'deactivate') {
-        setPaymentTerm('term2');
-      } else {
-        setPaymentTerm('term1'); // Default to term1 for new enrollments if not specified
-      }
-      
-      setCouponCode("");
-      setAppliedPrice(null);
-      setPaymentProof(null);
-      setUtrNumber('');
-      setSelectedBatchId(null);
-      setShowPaymentModal(true);
-    };
-
-    window.addEventListener('open-payment-modal', handleOpenPayment as EventListener);
-    return () => window.removeEventListener('open-payment-modal', handleOpenPayment as EventListener);
-  }, []);
-
-  // Auto-select first batch when batches load
-  useEffect(() => {
-    if (batches && batches.length > 0 && !selectedBatchId) {
-      const firstBatch = batches.find(b => b.batch_type !== 'all') || batches[0];
-      setSelectedBatchId(firstBatch.id);
-      setSelectedBatchType(firstBatch.batch_type as "Morning" | "Afternoon" | "Evening" | "all");
-    }
-  }, [batches, selectedBatchId]);
-
-  // Courses now navigate directly to Video Library — no intermediate viewer
-
-  // Hooks are already declared at the top of CoursesTab
+  if (viewingCourse) {
+    return (
+      <StudentCourseViewer
+        course={viewingCourse}
+        isEnrolled={viewingCourse.enrollmentStatus === 'active'}
+        onBack={() => setViewingCourse(null)}
+      />
+    );
+  }
 
   const handleApplyCoupon = async () => {
     if (!couponCode) return;
@@ -232,9 +201,7 @@ function CoursesTab() {
           payment_proof_url: paymentProofUrl,
           utr_number: utrNumber,
           coupon_code: appliedPrice ? couponCode : undefined,
-          payment_term: paymentTerm,
-          requested_batch_type: selectedBatchType,
-          requested_batch_id: selectedBatchId || undefined
+          payment_term: paymentTerm
       });
 
       toast({
@@ -290,6 +257,14 @@ function CoursesTab() {
                     </p>
                   </div>
                </div>
+               <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full h-8 w-8"
+                onClick={() => setShowPaymentModal(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
           )}
 
@@ -303,11 +278,7 @@ function CoursesTab() {
                    { id: 'term1', label: 'Term 1', pct: 60, amount: term1Amount },
                    { id: 'term2', label: 'Term 2', pct: 40, amount: term2Amount }
                  ].filter(plan => {
-                   // If specifically requested term2, only show term2
-                   if (paymentTerm === 'term2') return plan.id === 'term2';
-                   
-                   const currentStatus = paymentCourse?.payment_term;
-                   if (currentStatus === 'term1') return plan.id === 'term2';
+                   if (paymentCourse?.payment_term === 'term1') return plan.id === 'term2';
                    return plan.id === 'full' || plan.id === 'term1';
                  }).map((plan) => (
                     <button 
@@ -320,50 +291,6 @@ function CoursesTab() {
                     </button>
                  ))}
                </div>
-            </div>
-
-            {/* Session Selection */}
-            <div className="space-y-4">
-               <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-center">Select Preferred Session</div>
-               {(() => {
-                 if (batchesLoading) return <div className="text-center py-4"><Loader2 className="h-6 w-6 animate-spin mx-auto text-slate-300" /></div>;
-                 
-                 const formatTime = (time?: string) => {
-                    if (!time) return '';
-                    const [hours, minutes] = time.split(':');
-                    const h = parseInt(hours);
-                    const ampm = h >= 12 ? 'PM' : 'AM';
-                    const displayH = h % 12 || 12;
-                    return `${displayH}:${minutes} ${ampm}`;
-                 };
-
-                 const sessions = (batches || []).flatMap(b => {
-                    if (b.batch_type === 'all') return []; // We want granular sessions
-                    return [b];
-                 });
-
-                 if (sessions.length === 0) return <div className="text-center py-2 text-[10px] font-bold text-slate-400">Standard sessions will be assigned by admin.</div>;
-
-                 return (
-                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                     {sessions.map((s) => (
-                       <button
-                         key={s.id}
-                         onClick={() => {
-                           setSelectedBatchType(s.batch_type as 'morning' | 'afternoon' | 'evening');
-                           setSelectedBatchId(s.id);
-                         }}
-                         className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1 ${selectedBatchId === s.id ? 'border-primary bg-primary/5 text-primary shadow-lg shadow-primary/10' : 'border-slate-100 bg-slate-50 hover:bg-slate-100 text-slate-600'}`}
-                       >
-                         <span className="text-[10px] font-black uppercase tracking-tighter">{s.batch_type}</span>
-                         <span className="text-[8px] font-bold opacity-70">
-                           {s.start_time && s.end_time ? `${formatTime(s.start_time)} - ${formatTime(s.end_time)}` : 'Timing TBD'}
-                         </span>
-                       </button>
-                     ))}
-                   </div>
-                 );
-               })()}
             </div>
 
             {/* Payment Section (Horizontal Mix) */}
@@ -432,12 +359,12 @@ function CoursesTab() {
             {/* Action Bar (Low Height) */}
             <div className="pt-6 sm:pt-8 border-t border-slate-100 flex items-center justify-between gap-6 pb-2">
               <div className="flex-1">
-                 <p className="text-[10px] text-slate-400 font-bold leading-relaxed max-w-[280px]">By clicking enroll, you agree to our terms. Approval usually takes <span className="text-slate-900">24 hours</span>.</p>
+                 <p className="text-[10px] text-slate-400 font-bold leading-relaxed max-w-[280px]">By clicking enroll, you agree to our terms. Manual approval usually takes <span className="text-slate-900">2-4 hours</span>.</p>
               </div>
               <Button
                   size="lg"
                   className="h-14 px-12 rounded-[1.25rem] font-black uppercase tracking-[0.1em] text-[12px] shadow-2xl shadow-slate-200 bg-slate-900 hover:bg-black text-white transition-all hover:scale-[1.02] active:scale-95 shrink-0"
-                  disabled={isUploading || !paymentProof || utrNumber.length !== 12 || (batches && batches.length > 0 && !selectedBatchId)}
+                  disabled={isUploading || !paymentProof || utrNumber.length !== 12}
                   onClick={handleEnrollmentSubmit}
               >
                   {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm Enrollment'}
@@ -480,28 +407,20 @@ function CoursesTab() {
 
               // Check for Term 2 Payment if active but has balance
               if (c.enrollmentStatus === 'active' && c.remaining_balance > 0) {
-                 // Check if the enrollment is more than 30 days old
-                 const enrollmentDate = new Date(c.enrolled_at || Date.now());
-                 const thirtyDaysAgo = new Date();
-                 thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-                 if (enrollmentDate < thirtyDaysAgo) {
-                    toast({
-                      title: "Standard Monthly Access Expired",
-                      description: "Please clear your Term 2 balance to continue learning.",
-                      className: "bg-amber-50 border-amber-200"
-                    });
-                    setPaymentCourse(c);
-                    setPaymentTerm('term2');
-                    setCouponCode("");
-                    setAppliedPrice(null);
-                    setShowPaymentModal(true);
-                    return;
-                 }
+                 toast({
+                   title: "Balance Dues Found",
+                   description: "Opening payment gateway for your remaining balance.",
+                   className: "bg-amber-50 border-amber-200"
+                 });
+                 setPaymentCourse(c);
+                 setPaymentTerm('term2');
+                 setCouponCode("");
+                 setAppliedPrice(null);
+                 setShowPaymentModal(true);
+                 return;
               }
               
-              // Navigate to Video Library with this course pre-selected
-              navigate('/student-dashboard/videos', { state: { courseId: c.id } });
+              setViewingCourse(c);
             }}
           />
         ) : (
@@ -683,7 +602,7 @@ function LiveClassesTab() {
     });
   };
 
-  const enrolledIds = new Set(enrolledCourses?.map(c => (c.id || c._id)?.toString()) || []);
+  const enrolledIds = new Set(enrolledCourses?.map(c => c.id?.toString()) || []);
   const filteredClasses = classes?.filter(c => {
     // If no course is associated, it's a general/public meeting
     if (!c.course_id) return true;
@@ -691,17 +610,7 @@ function LiveClassesTab() {
     // If course is associated, verify the student is enrolled in it
     const courseObj = c.course_id as unknown as { _id?: string, id?: string } | string;
     const courseId = typeof courseObj === 'object' && courseObj !== null ? (courseObj._id || courseObj.id) : courseObj;
-    
-    if (!enrolledIds.has(courseId?.toString() || '')) return false;
-
-    // Batch Filtering: If a target_batch is specified and not 'all', 
-    // verify the student's assigned session matches the session requested for this broadcast
-    if (c.target_batch && c.target_batch !== 'all') {
-      const enrollment = enrolledCourses?.find(e => (e.id || e._id)?.toString() === courseId?.toString());
-      return enrollment?.assigned_session === c.target_batch;
-    }
-    
-    return true;
+    return enrolledIds.has(courseId?.toString() || '');
   }) || [];
 
   return (
@@ -837,9 +746,9 @@ function AttendancePulse() {
   const [checkedIn, setCheckedIn] = useState(false);
   const [checking, setChecking] = useState(true);
   const { toast } = useToast();
-  const navigate = useNavigate();
 
   useEffect(() => {
+    // Check if already checked in today
     const checkStatus = async () => {
       try {
         const today = new Date().toISOString().split('T')[0];
@@ -892,23 +801,15 @@ function AttendancePulse() {
     <div className="relative group">
        <AnimatePresence mode="wait">
          {checkedIn ? (
-           <div className="flex flex-col items-end gap-1">
-             <motion.div 
-               key="checked"
-               initial={{ scale: 0.8, opacity: 0 }}
-               animate={{ scale: 1, opacity: 1 }}
-               className="h-12 px-6 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-2 font-black text-[10px] uppercase tracking-tighter shadow-sm"
-             >
-               <CheckCircle2 className="h-4 w-4" />
-               Attendance Secured
-             </motion.div>
-             <button 
-               onClick={() => navigate('/student-dashboard/attendance')}
-               className="text-[9px] font-black text-slate-400 hover:text-primary uppercase tracking-widest px-2 transition-colors flex items-center gap-1"
-             >
-               View Attendance Ledger <ChevronRight className="h-2 w-2" />
-             </button>
-           </div>
+           <motion.div 
+             key="checked"
+             initial={{ scale: 0.8, opacity: 0 }}
+             animate={{ scale: 1, opacity: 1 }}
+             className="h-12 px-6 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center gap-2 font-black text-[10px] uppercase tracking-tighter shadow-sm"
+           >
+             <CheckCircle2 className="h-4 w-4" />
+             Attendance Secured
+           </motion.div>
          ) : (
            <motion.button
              key="mark"
@@ -999,7 +900,7 @@ function LiveSessionBanner() {
   );
 }
 
-function DashboardHome() {
+function DashboardHome({ basePath = "/student-dashboard" }: { basePath?: string } = {}) {
   const { data: stats } = useStudentStats();
   const { data: enrolledCourses } = useEnrolledCourses();
   const { data: dashboardData } = useStudentDashboardData();
@@ -1030,8 +931,7 @@ function DashboardHome() {
             Elevate your skills and track your learning journey.
           </p>
         </div>
-        <div className="hidden md:flex items-center gap-4">
-           <RatingPulse />
+        <div className="hidden md:flex gap-3">
            <AttendancePulse />
         </div>
       </div>
@@ -1084,7 +984,7 @@ function DashboardHome() {
                     Discover professional courses curated by industry experts.
                   </p>
                   <Button className="bg-slate-900 text-white hover:bg-primary h-12 px-8 font-black rounded-full shadow-xl shadow-slate-900/10" asChild>
-                    <a href="/student-dashboard/courses">View Catalog</a>
+                    <a href={`${basePath}/courses`}>View Catalog</a>
                   </Button>
                 </div>
               ) : (
@@ -1108,11 +1008,15 @@ function DashboardHome() {
                     </h2>
                     
                     <div className="space-y-3">
-                       
+                       <div className="flex justify-between items-end">
+                         <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest leading-none">Overall Program Progress</span>
+                         <span className="text-2xl font-black text-slate-900 tracking-tighter italic">{latestCourse.progress}%</span>
+                       </div>
+                       <Progress value={latestCourse.progress} className="h-3 bg-slate-100 rounded-full [&>div]:bg-primary shadow-inner" />
                     </div>
 
                     <Button className="bg-slate-900 text-white hover:bg-black hover:scale-105 transition-all h-14 px-10 font-black italic tracking-tighter rounded-2xl mt-4 shadow-[0_20px_40px_rgba(0,0,0,0.1)] flex items-center gap-3" asChild>
-                      <a href={`/student-dashboard/courses?courseId=${latestCourse.id}`}>
+                      <a href={`${basePath}/courses?courseId=${latestCourse.id}`}>
                         RESUME LESSON <ArrowRight className="h-5 w-5" />
                       </a>
                     </Button>
@@ -1121,35 +1025,74 @@ function DashboardHome() {
               )}
             </div>
           </Card>
+
+          {/* Learning Activity Chart - New Feature */}
+          <Card className="pro-card border-none shadow-xl shadow-slate-200/20 overflow-hidden">
+            <CardHeader className="pb-2">
+               <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xl font-black text-slate-900">Learning Intensity</CardTitle>
+                    <CardDescription className="font-medium">Your weekly effort across all modules</CardDescription>
+                  </div>
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+                    <Activity className="h-5 w-5" />
+                  </div>
+               </div>
+            </CardHeader>
+            <CardContent>
+               <div className="h-[200px] w-full mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={activityData}>
+                      <defs>
+                        <linearGradient id="colorMin" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#1e293b" stopOpacity={0.1}/>
+                          <stop offset="95%" stopColor="#1e293b" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                      <YAxis hide />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        itemStyle={{ color: '#1e293b', fontWeight: 'bold' }}
+                      />
+                      <Area type="monotone" dataKey="minutes" stroke="#1e293b" strokeWidth={3} fillOpacity={1} fill="url(#colorMin)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+               </div>
+            </CardContent>
+          </Card>
+
+          {/* Row of stats and activity removed as requested */}
         </div>
 
         {/* Right Sidebar - Spans 1 col */}
         <div className="lg:col-span-1 space-y-6">
           {/* Quick Access Documents - Real Data */}
           <Card className="pro-card border-none shadow-xl shadow-slate-200/20">
-            <CardHeader className="pt-8 px-8 pb-4">
+            <CardHeader className="pb-4">
                <CardTitle className="text-lg font-black text-slate-900 flex items-center gap-2">
                   <FileText className="h-5 w-5 text-primary" />
                   Resource Library
                </CardTitle>
             </CardHeader>
-            <CardContent className="px-8 pb-8 space-y-3">
+            <CardContent className="space-y-3">
                {recentResources.length === 0 ? (
                  <div className="py-8 text-center text-xs text-slate-400 font-medium italic">No recent materials</div>
                ) : (
                  recentResources.map((res, i: number) => (
                    <div key={i} className="flex items-center justify-between p-3 rounded-xl border border-slate-50 hover:bg-slate-50 transition-colors group cursor-pointer" onClick={() => res.view_url && window.open(res.view_url, '_blank')}>
-                      <div className="flex items-center gap-3 min-w-0 flex-1 mr-4">
-                         <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black group-hover:bg-slate-900 group-hover:text-white transition-all uppercase shrink-0">
+                      <div className="flex items-center gap-3">
+                         <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center text-[10px] font-black group-hover:bg-slate-900 group-hover:text-white transition-all uppercase">
                            {res.upload_format || res.file_url?.split('.').pop() || 'PDF'}
                          </div>
-                         <span className="text-sm font-bold text-slate-700 truncate">{res.asset_title || 'Material'}</span>
+                         <span className="text-sm font-bold text-slate-700 line-clamp-1">{res.asset_title || 'Material'}</span>
                       </div>
-                      <Download className="h-4 w-4 text-slate-400 group-hover:text-slate-900 shrink-0" />
+                      <Download className="h-4 w-4 text-slate-400 group-hover:text-slate-900" />
                    </div>
                  ))
                )}
-               <Button variant="ghost" className="w-full text-primary font-bold text-xs" onClick={() => window.location.href='/student-dashboard/resources'}>
+               <Button variant="ghost" className="w-full text-primary font-bold text-xs" onClick={() => window.location.href=basePath+'/resources'}>
                  View All Materials
                </Button>
             </CardContent>
@@ -1157,13 +1100,13 @@ function DashboardHome() {
 
           {/* Recent Performance - New Feature */}
           <Card className="pro-card border-none shadow-xl shadow-slate-200/20">
-            <CardHeader className="pt-8 px-8 pb-4">
+            <CardHeader className="pb-4">
               <CardTitle className="text-lg font-black text-slate-900 flex items-center gap-2">
                 <Trophy className="h-5 w-5 text-amber-500" />
                 Recent Performance
               </CardTitle>
             </CardHeader>
-            <CardContent className="px-8 pb-8 space-y-4">
+            <CardContent className="space-y-4">
               {dashboardData?.results?.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400 font-medium italic">No recent test attempts</div>
               ) : (
@@ -1187,7 +1130,7 @@ function DashboardHome() {
                   </div>
                 ))
               )}
-              <Button variant="ghost" className="w-full text-slate-500 font-bold text-xs hover:text-primary" onClick={() => navigate('/student-dashboard/history')}>
+              <Button variant="ghost" className="w-full text-slate-500 font-bold text-xs hover:text-primary" onClick={() => navigate(basePath+'/history')}>
                 Review Exam History
               </Button>
             </CardContent>
@@ -1195,7 +1138,15 @@ function DashboardHome() {
 
           {/* Announcements removed per user request */}
 
-          {/* Student Support Section - Removed as requested */}
+          {/* Student Support Section - New Feature */}
+          <Card className="bg-primary text-white p-6 rounded-3xl relative overflow-hidden group">
+             <div className="absolute -bottom-4 -right-4 h-24 w-24 bg-white/10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-1000"></div>
+             <h4 className="text-lg font-black mb-1">Need Help?</h4>
+             <p className="text-white/80 text-xs font-medium mb-4">Chat with our senior instructors anytime</p>
+             <Button className="w-full bg-white text-primary hover:bg-slate-100 font-bold rounded-xl h-10 shadow-lg" onClick={() => window.location.href=basePath+'/chat'}>
+               Open Career Support
+             </Button>
+          </Card>
         </div>
       </div>
     </div>
@@ -1247,17 +1198,17 @@ const routeConfig: Record<string, { title: string; description: string; icon: Re
     icon: FileText,
     component: <ExamModule type="mock" />,
   },
-  "/student-dashboard/attendance": {
-    title: "My Attendance",
-    description: "Track and review your daily attendance records",
-    icon: ClipboardList,
-    component: <StudentAttendance />,
-  },
   "/student-dashboard/history": {
     title: "Academic Record",
     description: "Review your past performance and transcripts",
     icon: History,
     component: <StudentHistory />,
+  },
+  "/student-dashboard/attendance": {
+    title: "My Attendance",
+    description: "Track and review your daily attendance records",
+    icon: ClipboardList,
+    component: <StudentAttendance />,
   },
   "/student-dashboard/notifications": {
     title: "Communications",
@@ -1271,15 +1222,31 @@ const routeConfig: Record<string, { title: string; description: string; icon: Re
     icon: MessageSquare,
     component: <ChatInterface />,
   },
+  "/student-dashboard/settings": {
+    title: "Preferences",
+    description: "Configure your digital learning environment",
+    icon: Settings,
+    component: <StudentSettings />,
+  },
+  "/student-dashboard/certification": {
+    title: "Certification",
+    description: "Download your official course completion certificates",
+    icon: Award,
+    component: <CertificationPage />,
+  },
 };
 
 import { RatingModal } from "./RatingModal";
-import { RatingPulse } from "./RatingPulse";
 
-export function DashboardContent() {
+export function DashboardContent({ basePath = "/student-dashboard" }: { basePath?: string } = {}) {
   const location = useLocation();
-  const currentPath = location.pathname;
+  const rawPath = location.pathname;
+  // Normalize intern-dashboard paths to student-dashboard for route matching
+  const currentPath = rawPath.startsWith(basePath) && basePath !== "/student-dashboard"
+    ? rawPath.replace(basePath, "/student-dashboard")
+    : rawPath;
   const navigate = useNavigate();
+  const _navigateTo = (path: string) => navigate(path.replace("/student-dashboard", basePath));
   const queryClient = useQueryClient();
   const { socket } = useSocket();
   const [ratingModalOpen, setRatingModalOpen] = useState(false);
@@ -1301,11 +1268,14 @@ export function DashboardContent() {
     };
   }, [socket, queryClient]);
 
+  const INTERN_HIDDEN_ROUTES = ["/student-dashboard/resume-ats", "/student-dashboard/mock-papers"];
+  const isIntern = basePath !== "/student-dashboard";
+
   if (currentPath === "/student-dashboard" || currentPath === "/student-dashboard/") {
-    return <DashboardHome />;
+    return <DashboardHome basePath={basePath} />;
   }
 
-  const config = routeConfig[currentPath];
+  const config = (isIntern && INTERN_HIDDEN_ROUTES.includes(currentPath)) ? undefined : routeConfig[currentPath];
 
   if (config) {
     if (config.component) {
@@ -1338,13 +1308,23 @@ export function DashboardContent() {
                     <div className="flex-1 min-w-0 overflow-hidden">
                       <StudentBatchSelector />
                     </div>
-                    <RatingPulse />
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedCourseForRating({ id: 'GENERAL', title: 'AOTMS Pro Academy' });
+                        setRatingModalOpen(true);
+                      }}
+                      className="bg-white border-2 border-slate-100 text-slate-900 font-black rounded-xl px-4 sm:px-6 h-10 sm:h-12 shadow-sm hover:border-yellow-400 hover:text-yellow-600 transition-all gap-2 text-[10px] sm:text-xs uppercase shrink-0 w-full sm:w-auto"
+                    >
+                      <Star className="h-4 w-4 fill-current" />
+                      Pulse Your Rating
+                    </Button>
                 </div>
               )}
 
               {currentPath === "/student-dashboard/notifications" && (
                 <Button 
-                  onClick={() => navigate("/student-dashboard/courses")}
+                  onClick={() => _navigateTo("/student-dashboard/courses")}
                   className="bg-primary text-white font-bold rounded-xl px-6 h-12 shadow-lg shadow-primary/20 hover:shadow-xl transition-all gap-2"
                 >
                   <BookOpen className="h-4 w-4" />

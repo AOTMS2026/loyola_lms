@@ -352,35 +352,109 @@ const requireInstructor = requireRole(['admin', 'manager', 'instructor']);
 app.post('/api/admin/broadcast', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
         const { type, selectedUsers, category, subject, message } = req.body;
-        console.log('[AI Hub Broadcast] Hit for', selectedUsers?.length, 'users');
+        console.log('[AI Hub Broadcast] Hit for', selectedUsers?.length, 'users', selectedUsers);
 
         if (!selectedUsers || selectedUsers.length === 0) {
             return res.status(400).json({ error: 'No recipients selected' });
         }
 
-        const recipients = await Profile.find({ user_id: { $in: selectedUsers } }).lean();
-        const emails = recipients.map(p => p.email).filter(e => !!e);
+        if (!subject || !message) {
+            return res.status(400).json({ error: 'Subject and message are required' });
+        }
 
-        if (emails.length === 0) {
-            return res.status(400).json({ error: 'No valid emails found for selected users' });
+        // ✅ FIX: Convert string IDs to ObjectId so MongoDB $in query actually matches
+        const validObjectIds = selectedUsers
+            .filter(id => mongoose.Types.ObjectId.isValid(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+
+        if (validObjectIds.length === 0) {
+            console.error('[AI Hub Broadcast] No valid ObjectIds from selectedUsers:', selectedUsers);
+            return res.status(400).json({ error: 'No valid user IDs provided' });
+        }
+
+        // Fetch emails + names from User collection (authoritative source)
+        const users = await User.find({ _id: { $in: validObjectIds } }).select('email full_name').lean();
+        console.log('[AI Hub Broadcast] Users found from DB:', users.length, users.map(u => u.email));
+
+        const userMap = {};
+        users.forEach(u => {
+            if (u.email) userMap[u._id.toString()] = { email: u.email, full_name: u.full_name || 'Student' };
+        });
+
+        // Fallback: check Profile for any missing (also cast to ObjectId)
+        const missingIds = selectedUsers.filter(id => !userMap[id] && mongoose.Types.ObjectId.isValid(id))
+                                        .map(id => new mongoose.Types.ObjectId(id));
+        if (missingIds.length > 0) {
+            console.log('[AI Hub Broadcast] Checking profiles for missing IDs:', missingIds.length);
+            const profiles = await Profile.find({ user_id: { $in: missingIds } }).lean();
+            profiles.forEach(p => {
+                if (p.email) userMap[p.user_id.toString()] = { email: p.email, full_name: p.full_name || 'Student' };
+            });
+        }
+
+        const recipients = Object.entries(userMap).map(([uid, u]) => ({ user_id: uid, ...u }));
+        console.log('[AI Hub Broadcast] Resolved recipients:', recipients.map(r => r.email));
+
+        if (recipients.length === 0) {
+            return res.status(400).json({ error: 'No valid emails found for selected users. Please sync platform data and try again.' });
         }
 
         const n8nWebhookUrl = process.env.N8N_ADMIN_STUDENT_EMAIL_URL || process.env.N8N_EMAIL_WEBHOOK_URL;
-        if (n8nWebhookUrl) {
-            console.log(`[AI Hub Broadcast] Proxying to n8n: ${n8nWebhookUrl}`);
-            await axios.post(n8nWebhookUrl, {
-                broadcast_type: type,
-                category,
-                subject,
-                content: message,
-                recipients: emails,
-                admin_id: req.user.id,
-                timestamp: new Date().toISOString()
-            });
-            console.log('[AI Hub Broadcast] n8n response received successfully');
+        if (!n8nWebhookUrl) {
+            console.error('[AI Hub Broadcast] No n8n webhook URL configured. Set N8N_ADMIN_STUDENT_EMAIL_URL in .env');
+            return res.status(500).json({ error: 'Mail webhook not configured. Contact administrator.' });
         }
 
-        res.json({ success: true, message: `Broadcast initiated for ${emails.length} recipients.` });
+        console.log('[AI Hub Broadcast] Sending to n8n webhook:', n8nWebhookUrl);
+
+        // Send one webhook call per recipient — matching the email.json spec the n8n workflow expects
+        const results = await Promise.allSettled(
+            recipients.map(r =>
+                axios.post(n8nWebhookUrl, {
+                    email: r.email,
+                    full_name: r.full_name,
+                    user_id: r.user_id,
+                    subject,
+                    message,          // ✅ send as both 'message' and 'content' for n8n compatibility
+                    content: message,
+                    category,
+                    broadcast_type: type,
+                    sent_at: new Date().toISOString(),
+                    triggered_by: req.user?.id || 'admin'
+                }, {
+                    timeout: 15000,
+                    headers: { 'Content-Type': 'application/json' }
+                })
+            )
+        );
+
+        const succeeded = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+                console.error(`[AI Hub Broadcast] ❌ Failed for ${recipients[i]?.email}:`, r.reason?.message, r.reason?.response?.data);
+            } else {
+                console.log(`[AI Hub Broadcast] ✅ Sent to ${recipients[i]?.email}:`, r.value?.status);
+            }
+        });
+
+        console.log(`[AI Hub Broadcast] Done — ${succeeded} sent, ${failed} failed out of ${recipients.length} total`);
+
+        if (succeeded === 0 && failed > 0) {
+            return res.status(502).json({
+                success: false,
+                error: `Broadcast failed: n8n webhook did not accept any requests. Check n8n workflow is active at: ${n8nWebhookUrl}`,
+                failed,
+                succeeded
+            });
+        }
+
+        res.json({
+            success: true,
+            message: `Broadcast sent to ${succeeded} recipient${succeeded !== 1 ? 's' : ''}.${failed > 0 ? ` ${failed} failed.` : ''}`,
+            succeeded,
+            failed
+        });
     } catch (err) {
         handleError(res, err, 'ai-broadcast-proxy');
     }
@@ -989,7 +1063,7 @@ app.post('/api/public/enroll', async (req, res) => {
 });
 
 app.post('/api/auth/signup', async (req, res) => {
-    const { email, password, fullName, phone, collegeName, instituteName, city, district, country, fullAddress, latitude, longitude } = req.body;
+    const { email, password, fullName, phone, courseType, collegeName, instituteName, city, district, country, fullAddress, latitude, longitude } = req.body;
     try {
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ error: 'User already exists' });
@@ -1003,6 +1077,10 @@ app.post('/api/auth/signup', async (req, res) => {
         const registrationDate = now.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
         const registrationTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
+        // Determine role based on courseType
+        // internship → 'intern', everything else → 'student'
+        const assignedRole = courseType === 'internship' ? 'intern' : 'student';
+
         // Create User
         const user = await User.create({
             email,
@@ -1014,7 +1092,7 @@ app.post('/api/auth/signup', async (req, res) => {
             registration_time: registrationTime
         });
 
-        // Create Profile
+        // Create Profile (include course_type)
         await Profile.create({
             user_id: user._id,
             email,
@@ -1023,6 +1101,7 @@ app.post('/api/auth/signup', async (req, res) => {
             mobile_number: phone,
             college_name: collegeName,
             institute_name: instituteName,
+            course_type: courseType || 'full_time',
             registration_date: registrationDate,
             registration_time: registrationTime,
             city,
@@ -1034,15 +1113,15 @@ app.post('/api/auth/signup', async (req, res) => {
             approval_status: 'pending'
         });
 
-        // Create Role
+        // Create Role based on courseType
         await UserRole.create({
             user_id: user._id,
-            role: 'student'
+            role: assignedRole
         });
 
         const token = generateToken(user);
         res.json({
-            user: { id: user._id, email, full_name: fullName, avatar_url: avatarUrl },
+            user: { id: user._id, email, full_name: fullName, avatar_url: avatarUrl, role: assignedRole },
             session: { access_token: token, expires_in: 604800 }
         });
 
@@ -2171,6 +2250,7 @@ app.get('/api/admin/users', authenticateToken, requireAdminOrManager, async (req
                 longitude: profile.longitude || null,
                 college_name: profile.college_name || null,
                 institute_name: profile.institute_name || null,
+                course_type: profile.course_type || 'full_time',
             };
         });
 
@@ -2870,8 +2950,8 @@ app.get('/api/chat/contacts', authenticateToken, async (req, res) => {
         const role = await getUserRole(req.user.id);
         let contacts = [];
 
-        if (role?.toLowerCase() === 'student') {
-            // Students see instructors of courses they are enrolled in
+        if (role?.toLowerCase() === 'student' || role?.toLowerCase() === 'intern') {
+            // Students and interns see instructors of courses they are enrolled in
             const enrollments = await Enrollment.find({
                 user_id: req.user.id,
                 status: 'active'
@@ -5891,8 +5971,10 @@ app.delete('/api/notifications/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/admin/students', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
-        const studentRoles = await UserRole.find({ role: 'student' }).select('user_id');
+        // Include both students AND interns
+        const studentRoles = await UserRole.find({ role: { $in: ['student', 'intern'] } }).select('user_id role');
         const studentIds = studentRoles.map(r => r.user_id);
+        const roleMap = studentRoles.reduce((acc, r) => { acc[r.user_id.toString()] = r.role; return acc; }, {});
 
         const students = await User.aggregate([
             { $match: { _id: { $in: studentIds } } },
@@ -5911,18 +5993,17 @@ app.get('/api/admin/students', authenticateToken, requireAdminOrManager, async (
                     user_id: '$_id',
                     full_name: 1,
                     email: 1,
-                    // avatar_url: check profile first (Cloudinary upload), then User model
                     avatar_url: { $ifNull: ['$profile.avatar_url', '$avatar_url'] },
                     phone: 1,
                     last_login_at: 1,
                     registration_date: 1,
                     registration_time: 1,
                     created_at: 1,
-                    role: { $literal: 'student' },
-                    // All profile fields needed by Academic Scores
+                    // Do NOT hardcode role — look it up dynamically below
                     mobile_number: '$profile.mobile_number',
                     college_name: '$profile.college_name',
                     institute_name: '$profile.institute_name',
+                    course_type: { $ifNull: ['$profile.course_type', 'full_time'] },
                     full_address: '$profile.full_address',
                     city: '$profile.city',
                     district: '$profile.district',
@@ -5938,7 +6019,13 @@ app.get('/api/admin/students', authenticateToken, requireAdminOrManager, async (
             { $sort: { created_at: -1 } }
         ]);
 
-        res.json(students);
+        // Attach correct role from roleMap
+        const result = students.map(s => ({
+            ...s,
+            role: roleMap[s.user_id.toString()] || (s.course_type === 'internship' ? 'intern' : 'student'),
+        }));
+
+        res.json(result);
     } catch (err) {
         handleError(res, err, 'get-admin-students');
     }
