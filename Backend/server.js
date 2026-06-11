@@ -258,8 +258,24 @@ const getZoomAccessToken = async () => {
 };
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:3000',
+    'https://loyola-lms-9uld.vercel.app',
+    'https://loyola-lms.onrender.com',
+    process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-    origin: true, // Automatically mirror the request origin to allow credentials
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        }
+        console.warn(`[CORS] Blocked origin: ${origin}`);
+        return callback(new Error(`CORS policy: origin ${origin} not allowed`), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true

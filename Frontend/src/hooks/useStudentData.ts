@@ -267,7 +267,7 @@ export function useAvailableCourses() {
             try {
                 // Use /public/courses which returns approved/published courses for all roles
                 const token = localStorage.getItem('access_token');
-                const res = await fetch(`${import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://aotms-lms-new.onrender.com/api')}/public/courses?limit=100`, {
+                const res = await fetch(`${import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://loyola-lms.onrender.com/api')}/public/courses?limit=100`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {}
                 });
                 if (!res.ok) throw new Error('Failed to fetch courses');

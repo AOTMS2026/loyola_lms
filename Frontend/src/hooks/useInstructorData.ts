@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
 const API_URL =
-  import.meta.env.VITE_API_URL || "https://new-lms-m5l5.onrender.com/api";
+  import.meta.env.VITE_API_URL || "https://loyola-lms.onrender.com/api";
 
 export interface Course {
   rejectionReason: string;
