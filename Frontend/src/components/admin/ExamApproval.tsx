@@ -74,7 +74,8 @@ export function ExamApproval() {
     setIsLoading(true);
     try {
       const data = await fetchWithAuth('/admin/exams-list') as Exam[];
-      setExams(data);
+      // Normalize _id → id so exam.id is always available
+      setExams((data || []).map((e: any) => ({ ...e, id: e.id || e._id?.toString?.() || '' })));
     } catch (error) {
        toast({ title: 'Fetch Error', description: 'Slow network or system lag detected.', variant: 'destructive' });
     } finally {

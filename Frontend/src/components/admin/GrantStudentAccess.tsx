@@ -94,6 +94,8 @@ export function GrantStudentAccess({ profiles: propProfiles = [], enrollments: p
     enabled: propEnrollments.length === 0,
   });
 
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
   // Fetch pending enrollment requests for Student Access tab
   const { data: pendingEnrollments = [], refetch: refetchPending } = useQuery({
     queryKey: ['pending-enrollment-requests'],
@@ -462,35 +464,58 @@ export function GrantStudentAccess({ profiles: propProfiles = [], enrollments: p
                       <div className="flex gap-2">
                         <Button
                           size="sm"
+                          disabled={processingId === (enroll.id || String(idx))}
                           className="rounded-xl h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
                           onClick={async () => {
+                            const eid = enroll.id || String(idx);
+                            setProcessingId(eid);
                             try {
                               await fetchWithAuth(`/courses/enrollment-status`, {
                                 method: 'PUT',
-                                body: JSON.stringify({ enrollmentId: enroll.id, status: 'active' }),
+                                body: JSON.stringify({ enrollmentId: enroll.id || enroll._id, status: 'active' }),
                               });
+                              toast({ title: 'Approved', description: `${studentName} has been enrolled in ${courseName}.` });
                               refetchPending();
                               queryClient.invalidateQueries({ queryKey: ['grant-access-enrollments'] });
-                            } catch { /* silent */ }
+                            } catch (err: any) {
+                              toast({ title: 'Approval Failed', description: err?.message || 'Could not approve. Please try again.', variant: 'destructive' });
+                            } finally {
+                              setProcessingId(null);
+                            }
                           }}
                         >
-                          <CheckCircle className="h-3.5 w-3.5" /> Approve
+                          {processingId === (enroll.id || String(idx))
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <CheckCircle className="h-3.5 w-3.5" />
+                          } Approve
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
+                          disabled={processingId === `reject-${enroll.id || String(idx)}`}
                           className="rounded-xl h-8 text-red-600 border-red-200 hover:bg-red-50 text-xs gap-1"
                           onClick={async () => {
+                            const eid = `reject-${enroll.id || String(idx)}`;
+                            setProcessingId(eid);
                             try {
                               await fetchWithAuth(`/courses/enrollment-status`, {
                                 method: 'PUT',
-                                body: JSON.stringify({ enrollmentId: enroll.id, status: 'rejected' }),
+                                body: JSON.stringify({ enrollmentId: enroll.id || enroll._id, status: 'rejected' }),
                               });
+                              toast({ title: 'Rejected', description: `${studentName}'s enrollment request has been rejected.` });
                               refetchPending();
-                            } catch { /* silent */ }
+                              queryClient.invalidateQueries({ queryKey: ['grant-access-enrollments'] });
+                            } catch (err: any) {
+                              toast({ title: 'Rejection Failed', description: err?.message || 'Could not reject. Please try again.', variant: 'destructive' });
+                            } finally {
+                              setProcessingId(null);
+                            }
                           }}
                         >
-                          <XCircle className="h-3.5 w-3.5" /> Reject
+                          {processingId === `reject-${enroll.id || String(idx)}`
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <XCircle className="h-3.5 w-3.5" />
+                          } Reject
                         </Button>
                       </div>
                     </div>

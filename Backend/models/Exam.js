@@ -28,6 +28,7 @@ const ExamSchema = new Schema({
     source_topic: { type: String },
     department: { type: String }, // Department this exam belongs to (CSE, ECE, etc.)
     created_by: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    approved_by: { type: Schema.Types.ObjectId, ref: 'User', default: null }, // who approved the exam
     is_active: { type: Boolean, default: true },
     custom_fields: [{ label: String, value: String }],
     created_at: { type: Date, default: Date.now, index: true },

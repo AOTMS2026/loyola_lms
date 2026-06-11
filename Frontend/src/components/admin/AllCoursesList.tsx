@@ -10,11 +10,14 @@ import {
   Pencil,
   DollarSign,
   Trash2,
+  Plus,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { SyncDataButton } from "./data/SyncDataButton";
 import {
   Dialog,
@@ -24,6 +27,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { fetchWithAuth } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 import type { Course as AdminCourse } from "@/hooks/useAdminData";
 
 interface AllCoursesListProps {
@@ -36,6 +41,8 @@ interface AllCoursesListProps {
   onDelete?: (id: string) => void;
   onSync?: () => void;
 }
+
+const DEPARTMENTS = ['CSE', 'ECE', 'EEE', 'DS', 'AIML', 'IT', 'MECH'];
 
 export function AllCoursesList({
   courses: allCourses,
@@ -53,6 +60,56 @@ export function AllCoursesList({
     price: string;
   } | null>(null);
   const [newPrice, setNewPrice] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newCourse, setNewCourse] = useState({
+    title: '', description: '', category: 'Engineering',
+    department: '', price: '0', level: 'beginner',
+  });
+  const [deleteConfirm, setDeleteConfirm] = useState<AdminCourse | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleCreateCourse = async () => {
+    if (!newCourse.title.trim()) return;
+    setCreating(true);
+    try {
+      await fetchWithAuth('/admin/courses', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: newCourse.title,
+          description: newCourse.description,
+          category: newCourse.category,
+          department: newCourse.department || null,
+          price: parseFloat(newCourse.price) || 0,
+          level: newCourse.level,
+        }),
+      });
+      toast({ title: 'Course Created', description: `"${newCourse.title}" is now live.` });
+      setShowCreate(false);
+      setNewCourse({ title: '', description: '', category: 'Engineering', department: '', price: '0', level: 'beginner' });
+      onSync?.();
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message || 'Could not create course', variant: 'destructive' });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!deleteConfirm) return;
+    setDeleting(true);
+    try {
+      await fetchWithAuth(`/admin/courses/${deleteConfirm.id}`, { method: 'DELETE' });
+      toast({ title: 'Course Deleted', description: `"${deleteConfirm.title}" has been removed.` });
+      setDeleteConfirm(null);
+      onSync?.();
+      onDelete?.(deleteConfirm.id);
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err?.message || 'Could not delete course', variant: 'destructive' });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     if (editingPrice) {
@@ -103,11 +160,19 @@ export function AllCoursesList({
           </p>
         </div>
         {onSync && (
-          <SyncDataButton 
-            onSync={onSync} 
-            isLoading={loading} 
-            className="h-14 px-8 shadow-xl shadow-slate-200/50"
-          />
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowCreate(true)}
+              className="h-11 px-5 rounded-2xl bg-primary text-white font-black text-xs uppercase tracking-widest gap-2 shadow-lg shadow-primary/20"
+            >
+              <Plus className="h-4 w-4" /> New Course
+            </Button>
+            <SyncDataButton 
+              onSync={onSync} 
+              isLoading={loading} 
+              className="h-11 px-6 shadow-xl shadow-slate-200/50"
+            />
+          </div>
         )}
       </div>
 
@@ -262,17 +327,87 @@ export function AllCoursesList({
                     >
                       Manage
                     </Button>
-
+                    <Button
+                      variant="outline"
+                      className="h-10 w-10 rounded-xl border-rose-200 text-rose-500 hover:bg-rose-50 shrink-0 p-0"
+                      onClick={() => setDeleteConfirm(course)}
+                      title="Delete course"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-
-
               </motion.div>
             );
           })}
         </div>
       )}
 
+      {/* ── CREATE COURSE MODAL ── */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="rounded-3xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black">Create New Course</DialogTitle>
+            <DialogDescription>Add a department course or a skill course open to all students.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-black uppercase tracking-widest text-slate-500">Course Title *</Label>
+              <Input placeholder="e.g. CSE Advanced Topics" value={newCourse.title} onChange={e => setNewCourse(p => ({ ...p, title: e.target.value }))} className="rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-black uppercase tracking-widest text-slate-500">Description</Label>
+              <Input placeholder="Short description..." value={newCourse.description} onChange={e => setNewCourse(p => ({ ...p, description: e.target.value }))} className="rounded-xl" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black uppercase tracking-widest text-slate-500">Department</Label>
+                <select value={newCourse.department} onChange={e => setNewCourse(p => ({ ...p, department: e.target.value }))} className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+                  <option value="">All Students (Skill)</option>
+                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-black uppercase tracking-widest text-slate-500">Category</Label>
+                <select value={newCourse.category} onChange={e => setNewCourse(p => ({ ...p, category: e.target.value }))} className="w-full h-10 rounded-xl border border-input bg-background px-3 text-sm">
+                  <option>Engineering</option>
+                  <option>Skill Development</option>
+                  <option>Data Science</option>
+                  <option>AI/ML</option>
+                  <option>IT</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              {newCourse.department ? `Only ${newCourse.department} students will see this course.` : 'All students can see this course (skill course).'}
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button className="rounded-xl bg-primary font-black" onClick={handleCreateCourse} disabled={creating || !newCourse.title.trim()}>
+              {creating ? 'Creating...' : 'Create Course'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── DELETE CONFIRM MODAL ── */}
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent className="rounded-3xl max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-black text-rose-600">Delete Course</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>"{deleteConfirm?.title}"</strong>? This will also remove all enrollments and batches for this course. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" className="rounded-xl" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button className="rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black" onClick={handleDeleteCourse} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Yes, Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

@@ -37,8 +37,9 @@ interface DashboardData {
     mobile_number: string;
     status: string;
   };
-  exam: ExamInfo | null;
+  exam: (ExamInfo & { _id?: string }) | null;
   exam_status: "upcoming" | "active" | "completed" | "blocked";
+  assigned_exams?: (ExamInfo & { _id?: string })[];
 }
 
 const STATUS_CONFIG = {
@@ -95,6 +96,24 @@ export default function InterviewDashboard() {
       console.error("Dashboard fetch error:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectExam = async (examId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/interview/auth/select-exam`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ exam_id: examId })
+      });
+      if (res.ok) {
+        fetchDashboard();
+      }
+    } catch (err) {
+      console.error("Error selecting exam:", err);
     }
   };
 
@@ -176,6 +195,27 @@ export default function InterviewDashboard() {
           <StatusIcon className="w-5 h-5 flex-shrink-0" />
           <span>{statusConfig.label}</span>
         </div>
+
+        {/* Assigned Exams Dropdown Selector */}
+        {data.assigned_exams && data.assigned_exams.length > 1 && (
+          <Card className="border-slate-200 shadow-sm rounded-2xl overflow-hidden bg-white p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <p className="text-slate-900 font-bold text-sm">Your Assigned Exams ({data.assigned_exams.length})</p>
+              <p className="text-slate-500 text-xs mt-0.5 font-medium">Select which exam details you would like to view and attempt.</p>
+            </div>
+            <select
+              value={exam?.id || exam?._id || ""}
+              onChange={(e) => handleSelectExam(e.target.value)}
+              className="h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold px-3 w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+            >
+              {data.assigned_exams.map((e: any) => (
+                <option key={e.id || e._id} value={e.id || e._id}>
+                  {e.title}
+                </option>
+              ))}
+            </select>
+          </Card>
+        )}
 
         {/* Exam Card */}
         {exam ? (

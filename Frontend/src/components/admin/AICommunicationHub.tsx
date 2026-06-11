@@ -154,14 +154,13 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
       toast.error("Please select at least one recipient");
       return;
     }
-    if (!subject.trim()) {
-      toast.error("Email subject is required");
+    if (!template.eventType && !eventTypeInput.trim()) {
+      toast.error("Please enter an event type");
       return;
     }
-    if (!message.trim()) {
-      toast.error("Message content is required");
-      return;
-    }
+    // Auto-build subject/message if not filled from template
+    const finalSubject = subject || `${template.eventType || eventTypeInput}: ${template.eventName || 'Notification'}`;
+    const finalMessage = message || `Event: ${template.eventName || eventTypeInput}\nType: ${template.eventType || eventTypeInput}${template.fromDate ? `\nFrom: ${template.fromDate}${template.toDate ? ' → ' + template.toDate : ''}` : ''}${template.time ? `\nTime: ${template.time}` : ''}${template.description ? `\n\n${template.description}` : ''}`;
 
     setIsSending(true);
     const tId = toast.loading(`Sending broadcast to ${selectedUsers.length} recipient${selectedUsers.length !== 1 ? "s" : ""}...`);
@@ -181,8 +180,8 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
             toDate: template.toDate,
             time: template.time,
           },
-          subject: subject.trim(),
-          message: message.trim(),
+          subject: finalSubject,
+          message: finalMessage,
           timestamp: new Date().toISOString(),
         }),
       });
@@ -538,35 +537,8 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
                 </div>
               )}
 
-              {/* Subject */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Email Subject</label>
-                <div className="relative group">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
-                  <Input
-                    placeholder="Enter a compelling subject line..."
-                    className="pl-11 h-12 rounded-2xl bg-slate-50 border-slate-200 focus:bg-white transition-all text-sm font-bold"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Message */}
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-1">Message Content</label>
-                <div className="relative group">
-                  <Textarea
-                    placeholder="Type your message here..."
-                    className="min-h-[180px] p-5 rounded-[2rem] bg-slate-50 border-slate-200 focus:bg-white transition-all text-sm font-medium leading-relaxed resize-none scrollbar-hide"
-                    value={message}
-                    onChange={(e) => setMessage(e.target.value)}
-                  />
-                  <div className="absolute right-4 bottom-4 flex gap-1 opacity-20 hover:opacity-100 transition-opacity">
-                    <Smile className="h-5 w-5 text-slate-400 cursor-pointer" />
-                  </div>
-                </div>
-              </div>
+              {/* Subject — hidden, auto-filled from template */}
+              {/* Message — hidden, auto-filled from template */}
 
               {/* Summary */}
               <div className="p-4 rounded-2xl bg-indigo-50/50 border border-indigo-100/50 flex items-start gap-4">
@@ -583,7 +555,7 @@ export function AICommunicationHub({ profiles = [], loading: profilesLoading, on
 
               <Button
                 onClick={handleSendBroadcast}
-                disabled={isSending || selectedUsers.length === 0 || !subject || !message}
+                disabled={isSending || selectedUsers.length === 0 || !template.eventType}
                 className="w-full h-14 rounded-[1.5rem] bg-primary text-white hover:bg-slate-900 transition-all shadow-xl shadow-primary/20 font-black text-xs uppercase tracking-[0.2em] gap-3"
               >
                 {isSending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}

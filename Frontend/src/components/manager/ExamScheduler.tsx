@@ -309,9 +309,23 @@ function ExamCard({
         <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
           {!isPast && exam.approval_status === "approved" && (
             <div className="flex flex-col xl:flex-row flex-1 gap-2">
-              <div className="flex-1 xl:flex-[2] px-4 h-11 xl:h-12 bg-emerald-50 border border-emerald-100 rounded-xl xl:rounded-2xl flex items-center justify-center gap-2">
-                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                 <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest">Protocol Approved</span>
+              <div className="flex flex-col flex-1 xl:flex-[2] gap-1">
+                <div className="px-4 h-11 bg-emerald-50 border border-emerald-100 rounded-xl xl:rounded-2xl flex items-center justify-center gap-2">
+                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                   <span className="text-[9px] font-black text-emerald-800 uppercase tracking-widest">Protocol Approved</span>
+                </div>
+                {(exam as any).approved_by_info && (
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-[9px] font-bold text-slate-600">
+                      By: <span className="text-slate-800">{(exam as any).approved_by_info.full_name}</span>
+                    </span>
+                    {(exam as any).approved_by_info.roll_number && (
+                      <span className="text-[9px] font-black text-primary uppercase">
+                        · {(exam as any).approved_by_info.roll_number}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <Button
                 variant="outline"
@@ -424,7 +438,12 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
   const ratings = useMemo(() => Array.isArray(rawRatings) ? rawRatings : [], [rawRatings]);
   const { toast } = useToast();
   const { data: rawExams, isLoading, refetch } = useExams();
-  const exams = useMemo(() => Array.isArray(rawExams) ? rawExams : [], [rawExams]);
+  const exams = useMemo(() =>
+    (Array.isArray(rawExams) ? rawExams : []).map((e: any) => ({
+      ...e,
+      id: e.id || e._id?.toString?.() || ''
+    })),
+  [rawExams]);
   const { data: rawQuestions } = useQuestions();
   const questions = useMemo(() => Array.isArray(rawQuestions) ? rawQuestions : [], [rawQuestions]);
   const createExam = useCreateExam();
@@ -450,7 +469,10 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
   >([]);
   const [isOtherType, setIsOtherType] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
-  const [activeStatusTab, setActiveStatusTab] = useState("pending");
+  const [activeStatusTab, setActiveStatusTab] = useState(() =>
+    // Default to 'approved' if useful; user can switch tabs
+    "approved"
+  );
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const form = useForm<ExamFormValues>({

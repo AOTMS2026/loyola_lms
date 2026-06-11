@@ -2650,16 +2650,123 @@ app.get('/api/admin/student-performance/:studentId', authenticateToken, requireA
 
 app.get('/api/admin/exams-list', authenticateToken, requireInstructor, async (req, res) => {
     try {
-        const exams = await Exam.find()
+        const role = await getUserRole(req.user.id);
+        let examQuery = {};
+
+        if (role === 'instructor') {
+            const instrCourses = await Course.find({
+                $or: [{ instructor_ids: req.user.id }, { instructor_id: req.user.id }]
+            }).select('_id').lean();
+            examQuery = { course_id: { $in: instrCourses.map(c => c._id) } };
+        } else if (role === 'manager') {
+            const managerDept = await getManagerDepartment(req.user.id);
+            if (managerDept) examQuery = { department: managerDept };
+        }
+
+        const rawExams = await Exam.find(examQuery)
             .sort({ created_at: -1 })
             .limit(100)
+            .populate('approved_by', 'full_name _id')
+            .populate('created_by', 'full_name _id')
             .lean();
 
-        // Transformed for frontend compatibility
-        const transformedExams = exams.map(e => ({ ...e, id: e._id }));
+        // Enrich approved_by with profile (roll_number)
+        const approverIds = rawExams.map(e => e.approved_by?._id).filter(Boolean);
+        const creatorIds  = rawExams.map(e => e.created_by?._id).filter(Boolean);
+        const allIds = [...new Set([...approverIds, ...creatorIds].map(id => id.toString()))];
+        const profiles = await Profile.find({ user_id: { $in: allIds } }).select('user_id roll_number').lean();
+        const profMap = {};
+        profiles.forEach(p => { profMap[p.user_id.toString()] = p; });
+
+        const transformedExams = rawExams.map(e => {
+            const approver = e.approved_by;
+            const creator  = e.created_by;
+            return {
+                ...e,
+                id: e._id,
+                approved_by_info: approver ? {
+                    full_name:   approver.full_name,
+                    roll_number: profMap[approver._id?.toString()]?.roll_number || null
+                } : null,
+                created_by_info: creator ? {
+                    full_name:   creator.full_name,
+                    roll_number: profMap[creator._id?.toString()]?.roll_number || null
+                } : null,
+            };
+        });
+
         res.json(transformedExams);
     } catch (err) {
         handleError(res, err, 'exams-list');
+    }
+});
+
+// Instructor — get all students from their assigned courses/batches
+app.get('/api/instructor/students', authenticateToken, requireInstructor, async (req, res) => {
+    try {
+        // Find all batches where this instructor is assigned
+        const batches = await Batch.find({ instructor_id: req.user.id }).select('_id').lean();
+        const batchIds = batches.map(b => b._id);
+
+        // Also find courses this instructor teaches, to get all enrollments
+        const instrCourses = await Course.find({
+            $or: [{ instructor_ids: req.user.id }, { instructor_id: req.user.id }]
+        }).select('_id').lean();
+        const courseIds = instrCourses.map(c => c._id);
+
+        // Get students from batches
+        const batchStudents = batchIds.length > 0
+            ? await StudentBatch.find({ batch_id: { $in: batchIds } }).select('student_id').lean()
+            : [];
+        const batchStudentIds = batchStudents.map(s => s.student_id);
+
+        // Get students enrolled in instructor's courses
+        const enrolledStudents = courseIds.length > 0
+            ? await Enrollment.find({ course_id: { $in: courseIds }, status: { $in: ['active', 'completed', 'pending'] } }).select('user_id').lean()
+            : [];
+        const enrolledStudentIds = enrolledStudents.map(e => e.user_id);
+
+        // Merge and deduplicate
+        const allStudentIds = [...new Set([
+            ...batchStudentIds.map(id => id.toString()),
+            ...enrolledStudentIds.map(id => id.toString())
+        ])];
+
+        if (allStudentIds.length === 0) return res.json([]);
+
+        // Aggregate user + profile data
+        const mongoose = require('mongoose');
+        const objectIds = allStudentIds.map(id => new mongoose.Types.ObjectId(id));
+        const students = await User.aggregate([
+            { $match: { _id: { $in: objectIds } } },
+            {
+                $lookup: {
+                    from: 'profiles',
+                    localField: '_id',
+                    foreignField: 'user_id',
+                    as: 'profile'
+                }
+            },
+            { $unwind: { path: '$profile', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    id: '$_id',
+                    user_id: '$_id',
+                    full_name: 1,
+                    email: 1,
+                    avatar_url: { $ifNull: ['$profile.avatar_url', '$avatar_url'] },
+                    mobile_number: '$profile.mobile_number',
+                    department: '$profile.department',
+                    roll_number: '$profile.roll_number',
+                    year: '$profile.year',
+                }
+            },
+            { $sort: { full_name: 1 } }
+        ]);
+
+        res.json(students);
+    } catch (err) {
+        handleError(res, err, 'instructor-students');
     }
 });
 
@@ -2795,6 +2902,77 @@ app.delete('/api/admin/permanent-delete/:dataType', authenticateToken, requireAd
         });
     } catch (err) {
         handleError(res, err, 'permanent-delete');
+    }
+});
+
+// Create a new course (admin or manager)
+app.post('/api/admin/courses', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
+        const { title, description, category, department, slug, price, level, thumbnail_url, theme_color } = req.body;
+
+        if (!title) return res.status(400).json({ error: 'Course title is required' });
+
+        // Manager can only create courses for their dept (or skill courses if admin)
+        const courseDept = managerDept || department || null;
+
+        const slugToUse = slug || title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+        // Check slug uniqueness
+        const existing = await Course.findOne({ slug: slugToUse });
+        if (existing) return res.status(400).json({ error: 'A course with this slug already exists. Try a different title.' });
+
+        const course = await Course.create({
+            title, slug: slugToUse,
+            description: description || '',
+            category: category || 'Engineering',
+            department: courseDept,
+            price: price || 0,
+            original_price: price || 0,
+            level: level || 'beginner',
+            status: 'published',
+            is_active: true,
+            thumbnail_url: thumbnail_url || 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=600',
+            theme_color: theme_color || '#3B82F6',
+            instructor_ids: [],
+            created_at: new Date(),
+        });
+
+        console.log(`[Course] Created: "${title}" by ${requesterRole} (dept: ${courseDept || 'ALL'})`);
+        res.status(201).json(course);
+    } catch (err) {
+        handleError(res, err, 'create-course');
+    }
+});
+
+// Delete a course (admin or manager — manager can only delete their dept courses)
+app.delete('/api/admin/courses/:id', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
+        const course = await Course.findById(id);
+        if (!course) return res.status(404).json({ error: 'Course not found' });
+
+        // Manager dept check
+        if (managerDept && course.department && course.department !== managerDept) {
+            return res.status(403).json({ error: `You can only delete ${managerDept} department courses.` });
+        }
+
+        // Cascade: remove enrollments, batches, videos, modules for this course
+        await Promise.all([
+            Enrollment.deleteMany({ course_id: id }),
+            Batch.deleteMany({ course_id: id }),
+        ]);
+
+        await Course.findByIdAndDelete(id);
+        console.log(`[Course] Deleted: "${course.title}" by ${requesterRole}`);
+        res.json({ success: true, message: `Course "${course.title}" deleted successfully.` });
+    } catch (err) {
+        handleError(res, err, 'delete-course');
     }
 });
 
@@ -5118,14 +5296,25 @@ app.post('/api/manager/grant-exam-access', authenticateToken, requireAdminOrMana
 
 app.get('/api/manager/approved-question-banks', authenticateToken, requireInstructor, async (req, res) => {
     try {
+        const role = await getUserRole(req.user.id);
+        const managerDept = role === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
+        // Build match filter — scope to dept if manager
+        const matchFilter = { approval_status: 'approved' };
+        if (managerDept) {
+            matchFilter.department = managerDept;
+            console.log(`[ACL] Manager question-banks scoped to dept: ${managerDept}`);
+        }
+
         const banks = await QuestionBank.aggregate([
-            { $match: { approval_status: 'approved' } },
+            { $match: matchFilter },
             {
                 $group: {
                     _id: '$topic',
                     topic: { $first: '$topic' },
                     count: { $sum: 1 },
                     difficulties: { $addToSet: '$difficulty' },
+                    department: { $first: '$department' },
                     created_at: { $max: '$created_at' },
                     created_by: { $first: '$created_by' }
                 }
@@ -5140,12 +5329,29 @@ app.get('/api/manager/approved-question-banks', authenticateToken, requireInstru
 
 app.get('/api/admin/question-bank-summary', authenticateToken, requireInstructor, async (req, res) => {
     try {
+        const role = await getUserRole(req.user.id);
+        const managerDept = role === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
+        // Scope by manager dept or instructor's courses
+        let matchStage = { $match: {} };
+        if (managerDept) {
+            matchStage = { $match: { department: managerDept } };
+        } else if (role === 'instructor') {
+            const instrCourses = await Course.find({
+                $or: [{ instructor_ids: req.user.id }, { instructor_id: req.user.id }]
+            }).select('_id').lean();
+            const instrCourseIds = instrCourses.map(c => c._id);
+            matchStage = { $match: { course_id: { $in: instrCourseIds } } };
+        }
+
         const banks = await QuestionBank.aggregate([
+            matchStage,
             {
                 $group: {
                     _id: { topic: '$topic', status: '$approval_status' },
                     topic: { $first: '$topic' },
                     status: { $first: '$approval_status' },
+                    department: { $first: '$department' },
                     count: { $sum: 1 },
                     created_by: { $first: '$created_by' },
                     created_at: { $max: '$created_at' }
@@ -5178,8 +5384,17 @@ app.get('/api/admin/question-bank-summary', authenticateToken, requireInstructor
             accessMap[key] = accessMap[key].size;
         }
 
-        // 3. Map exams for quick lookup by title/topic
-        const allExams = await Exam.find({}).lean();
+        // 3. Map exams for quick lookup — scope to dept (manager) or instructor's courses
+        let examQuery = {};
+        if (managerDept) {
+            examQuery = { department: managerDept };
+        } else if (role === 'instructor') {
+            const instrCourses = await Course.find({
+                $or: [{ instructor_ids: req.user.id }, { instructor_id: req.user.id }]
+            }).select('_id').lean();
+            examQuery = { course_id: { $in: instrCourses.map(c => c._id) } };
+        }
+        const allExams = await Exam.find(examQuery).lean();
         const examMap = {};
         allExams.forEach(e => { examMap[e.title] = e; });
 
@@ -6372,11 +6587,37 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
                     { created_by: req.user.id }
                 ]
             };
-            // If query already has keys, wrap it in $and along with our access filter
             if (Object.keys(query).length > 0) {
                 query = { $and: [query, accessFilter] };
             } else {
                 query = accessFilter;
+            }
+        }
+
+        // Instructor scoping — restrict all data to their own courses only
+        if (role === 'instructor') {
+            const instrCourses = await Course.find({
+                $or: [
+                    { instructor_ids: req.user.id },
+                    { instructor_id: req.user.id }
+                ]
+            }).select('_id').lean();
+            const instrCourseIds = instrCourses.map(c => c._id);
+
+            const courseFilter = { course_id: { $in: instrCourseIds } };
+
+            if (table === 'exams' || table === 'exam_schedulings') {
+                query = Object.keys(query).length > 0 ? { $and: [query, courseFilter] } : courseFilter;
+                console.log(`[ACL] Instructor scoped exams to their ${instrCourseIds.length} courses`);
+            } else if (['course_enrollments', 'exam_results', 'live_classes', 'course_modules', 'course_videos', 'course_resources', 'question_bank'].includes(table)) {
+                query = Object.keys(query).length > 0 ? { $and: [query, courseFilter] } : courseFilter;
+                console.log(`[ACL] Instructor scoped ${table} to their courses`);
+            } else if (table === 'resumescans') {
+                // Scope to students enrolled in instructor's courses
+                const enrollments = await Enrollment.find({ course_id: { $in: instrCourseIds } }).select('user_id').lean();
+                const studentIds = [...new Set(enrollments.map(e => e.user_id.toString()))];
+                const studFilter = { user_id: { $in: studentIds } };
+                query = Object.keys(query).length > 0 ? { $and: [query, studFilter] } : studFilter;
             }
         }
 
@@ -6403,7 +6644,19 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
                     console.log(`[ACL] Manager scoped ${table} to dept: ${managerDept} (${deptUserIds.length} users)`);
 
                 } else if (deptFieldTables.includes(table)) {
-                    const deptFilter = { department: managerDept };
+                    let deptFilter;
+                    if (table === 'courses') {
+                        // Managers see their dept courses + skill courses (null dept)
+                        deptFilter = {
+                            $or: [
+                                { department: managerDept },
+                                { department: null },
+                                { department: { $exists: false } }
+                            ]
+                        };
+                    } else {
+                        deptFilter = { department: managerDept };
+                    }
                     query = Object.keys(query).length > 0 ? { $and: [query, deptFilter] } : deptFilter;
                     console.log(`[ACL] Manager scoped ${table} to dept field: ${managerDept}`);
                 }
@@ -6424,9 +6677,25 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
 
             if (studentScopedTables[table]) {
                 const scopeField = studentScopedTables[table];
-                // Overwrite any attempted ID with the actual user ID to prevent unauthorized access
                 query[scopeField] = req.user.id;
                 console.log(`[ACL] Student scoping ${table} to ${scopeField}=${req.user.id}`);
+            }
+
+            // Course catalog scoping — show own dept course + all skill courses (null dept)
+            if (table === 'courses') {
+                const studentProfile = await Profile.findOne({ user_id: req.user.id }).select('department').lean();
+                const studentDept = studentProfile?.department;
+                if (studentDept) {
+                    const deptFilter = {
+                        $or: [
+                            { department: studentDept },
+                            { department: null },
+                            { department: { $exists: false } }
+                        ]
+                    };
+                    query = Object.keys(query).length > 0 ? { $and: [query, deptFilter] } : deptFilter;
+                    console.log(`[ACL] Student course catalog scoped to dept: ${studentDept} + skill courses`);
+                }
             }
 
             // Batch-wise and Enrollment-wise scoping for content
@@ -6744,6 +7013,34 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
         } else if (table === 'coupons') {
             data = await dataQuery
                 .populate('user_id', 'full_name email avatar_url');
+        } else if (table === 'exam_schedulings' || table === 'exams') {
+            // Populate approved_by and created_by so frontend can show who approved
+            const rawExams = await dataQuery
+                .populate('approved_by', 'full_name _id')
+                .populate('created_by', 'full_name _id')
+                .lean();
+            // Enrich with profile (roll_number) for approver and creator
+            const approverIds = rawExams.map(e => e.approved_by?._id).filter(Boolean);
+            const creatorIds  = rawExams.map(e => e.created_by?._id).filter(Boolean);
+            const allIds = [...new Set([...approverIds, ...creatorIds].map(id => id.toString()))];
+            const profiles = await Profile.find({ user_id: { $in: allIds } }).select('user_id roll_number').lean();
+            const profMap = {};
+            profiles.forEach(p => { profMap[p.user_id.toString()] = p; });
+            data = rawExams.map(exam => {
+                const approver = exam.approved_by;
+                const creator  = exam.created_by;
+                return {
+                    ...exam,
+                    approved_by_info: approver ? {
+                        full_name:   approver.full_name,
+                        roll_number: profMap[approver._id?.toString()]?.roll_number || null
+                    } : null,
+                    created_by_info: creator ? {
+                        full_name:   creator.full_name,
+                        roll_number: profMap[creator._id?.toString()]?.roll_number || null
+                    } : null,
+                };
+            });
         } else {
             data = await dataQuery;
         }
@@ -6960,8 +7257,9 @@ app.put('/api/data/:table/:id', authenticateToken, async (req, res) => {
 
         const item = await Model.findByIdAndUpdate(id, req.body, { returnDocument: 'after' });
 
-        // Side-effect: If an exam is approved, auto-approve the questions for that topic
+        // Side-effect: If an exam is approved, store approved_by and auto-approve questions
         if (table === 'exams' && req.body.approval_status === 'approved') {
+            await Model.findByIdAndUpdate(id, { $set: { approved_by: req.user.id } });
             await QuestionBank.updateMany(
                 { topic: item.title },
                 { $set: { approval_status: 'approved' } }
@@ -8211,7 +8509,17 @@ app.get('/api/public/courses', async (req, res) => {
         if (req.query.category && req.query.category.toLowerCase() !== 'all') {
             query.category = req.query.category;
         }
-        const courses = await Course.find(query).limit(50);
+
+        // Dept filter: if dept param passed, show that dept's courses + skill courses (null dept)
+        if (req.query.dept) {
+            query.$or = [
+                { department: req.query.dept },
+                { department: null },
+                { department: { $exists: false } }
+            ];
+        }
+
+        const courses = await Course.find(query).limit(100);
         res.json(courses);
     } catch (err) {
         handleError(res, err, 'public-courses');

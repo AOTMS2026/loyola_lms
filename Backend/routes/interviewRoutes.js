@@ -144,12 +144,40 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
     router.get('/auth/me', authenticateCandidate, async (req, res) => {
         try {
             const candidate = req.candidate;
-            let examDetails = null;
 
-            if (candidate.assigned_exam_id) {
-                examDetails = await InterviewExamSchedule.findById(candidate.assigned_exam_id)
-                    .select('title topic difficulty duration_minutes passing_percentage scheduled_date scheduled_time')
-                    .lean();
+            // Get all assigned exams for this candidate
+            const assignments = await InterviewAssignment.find({ candidate_id: candidate._id }).lean();
+            const examIds = assignments.map(a => a.exam_id);
+            const examsList = await InterviewExamSchedule.find({ _id: { $in: examIds } })
+                .select('title topic difficulty duration_minutes passing_percentage scheduled_date scheduled_time')
+                .lean();
+
+            const examsEnriched = examsList.map(e => ({ ...e, id: e._id }));
+
+            let activeExamId = candidate.assigned_exam_id;
+            if (!activeExamId && examsEnriched.length > 0) {
+                activeExamId = examsEnriched[0].id;
+                candidate.assigned_exam_id = activeExamId;
+                const activeAssignment = assignments.find(a => a.exam_id.toString() === activeExamId.toString());
+                candidate.exam_schedule = {
+                    date: activeAssignment?.scheduled_date,
+                    time: activeAssignment?.scheduled_time,
+                    duration_minutes: activeAssignment?.duration_minutes
+                };
+                await candidate.save();
+            }
+
+            let examDetails = null;
+            if (activeExamId) {
+                examDetails = examsEnriched.find(e => e.id.toString() === activeExamId.toString()) || null;
+                if (!examDetails) {
+                    examDetails = await InterviewExamSchedule.findById(activeExamId)
+                        .select('title topic difficulty duration_minutes passing_percentage scheduled_date scheduled_time')
+                        .lean();
+                    if (examDetails) {
+                        examDetails.id = examDetails._id;
+                    }
+                }
             }
 
             // Determine exam status
@@ -168,7 +196,7 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
                 // Check if already attempted
                 const attempt = await InterviewAttempt.findOne({
                     candidate_id: candidate._id,
-                    exam_id: candidate.assigned_exam_id,
+                    exam_id: activeExamId,
                     status: { $in: ['submitted', 'auto_submitted', 'force_submitted', 'blocked'] }
                 });
                 if (attempt) examStatus = 'completed';
@@ -186,10 +214,46 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
                     status: candidate.status
                 },
                 exam: examDetails,
-                exam_status: examStatus
+                exam_status: examStatus,
+                assigned_exams: examsEnriched
             });
         } catch (err) {
             handleError(res, err, 'interview-candidate-me');
+        }
+    });
+
+    // PUT /api/interview/auth/select-exam  — Candidate selects active exam from their assigned list
+    router.put('/auth/select-exam', authenticateCandidate, async (req, res) => {
+        const { exam_id } = req.body;
+        const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+        try {
+            const candidate = req.candidate;
+            if (!exam_id) return res.status(400).json({ error: 'Exam ID is required' });
+
+            // Verify assignment exists
+            const assignment = await InterviewAssignment.findOne({
+                candidate_id: candidate._id,
+                exam_id: exam_id
+            });
+            if (!assignment) {
+                return res.status(403).json({ error: 'You are not assigned to this exam' });
+            }
+
+            candidate.assigned_exam_id = exam_id;
+            candidate.exam_schedule = {
+                date: assignment.scheduled_date,
+                time: assignment.scheduled_time,
+                duration_minutes: assignment.duration_minutes
+            };
+            candidate.updated_at = new Date();
+            await candidate.save();
+
+            await audit(candidate._id, 'candidate', 'select_exam', 'exam', exam_id, { exam_id }, ip);
+
+            res.json({ success: true, message: 'Active exam updated successfully' });
+        } catch (err) {
+            handleError(res, err, 'interview-select-exam');
         }
     });
 
@@ -210,7 +274,71 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
             // Check uniqueness
             const existing = await InterviewCandidate.findOne({ $or: [{ username }, { email }] });
             if (existing) {
-                return res.status(400).json({ error: 'Username or email already exists' });
+                if (assigned_exam_id) {
+                    let finalSchedule = {
+                        date: scheduled_date,
+                        time: scheduled_time,
+                        duration_minutes: duration_minutes
+                    };
+
+                    if (!scheduled_date || !scheduled_time || !duration_minutes) {
+                        const exam = await InterviewExamSchedule.findById(assigned_exam_id).lean();
+                        if (exam) {
+                            finalSchedule.date = exam.scheduled_date;
+                            finalSchedule.time = exam.scheduled_time;
+                            finalSchedule.duration_minutes = exam.duration_minutes;
+                        }
+                    }
+
+                    existing.assigned_exam_id = assigned_exam_id;
+                    existing.exam_schedule = finalSchedule;
+                    existing.updated_at = new Date();
+                    await existing.save();
+
+                    // Create or update assignment record
+                    await InterviewAssignment.findOneAndUpdate(
+                        { exam_id: assigned_exam_id, candidate_id: existing._id },
+                        {
+                            assigned_by: req.user.id,
+                            assigned_at: new Date(),
+                            scheduled_date: finalSchedule.date,
+                            scheduled_time: finalSchedule.time,
+                            duration_minutes: finalSchedule.duration_minutes
+                        },
+                        { upsert: true }
+                    );
+                }
+
+                await audit(req.user.id, 'instructor', 'assign_existing_candidate', 'candidate', existing._id, { full_name: existing.full_name, email: existing.email, username: existing.username }, ip);
+
+                return res.json({
+                    message: 'Interview candidate assigned successfully',
+                    candidate: {
+                        id: existing._id,
+                        full_name: existing.full_name,
+                        email: existing.email,
+                        username: existing.username,
+                        mobile_number: existing.mobile_number,
+                        status: existing.status,
+                        assigned_exam_id: existing.assigned_exam_id
+                    },
+                    credentials: { username: existing.username, password: '(existing candidate account)' }
+                });
+            }
+
+            let finalSchedule = {
+                date: scheduled_date,
+                time: scheduled_time,
+                duration_minutes: duration_minutes
+            };
+
+            if (assigned_exam_id && (!scheduled_date || !scheduled_time || !duration_minutes)) {
+                const exam = await InterviewExamSchedule.findById(assigned_exam_id).lean();
+                if (exam) {
+                    finalSchedule.date = exam.scheduled_date;
+                    finalSchedule.time = exam.scheduled_time;
+                    finalSchedule.duration_minutes = exam.duration_minutes;
+                }
             }
 
             const salt = await bcrypt.genSalt(10);
@@ -224,11 +352,7 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
                 password_hash,
                 created_by: req.user.id,
                 assigned_exam_id: assigned_exam_id || null,
-                exam_schedule: {
-                    date: scheduled_date,
-                    time: scheduled_time,
-                    duration_minutes: duration_minutes
-                },
+                exam_schedule: finalSchedule,
                 status: 'active'
             });
 
@@ -236,7 +360,13 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
             if (assigned_exam_id) {
                 await InterviewAssignment.findOneAndUpdate(
                     { exam_id: assigned_exam_id, candidate_id: candidate._id },
-                    { assigned_by: req.user.id, assigned_at: new Date(), scheduled_date, scheduled_time, duration_minutes },
+                    {
+                        assigned_by: req.user.id,
+                        assigned_at: new Date(),
+                        scheduled_date: finalSchedule.date,
+                        scheduled_time: finalSchedule.time,
+                        duration_minutes: finalSchedule.duration_minutes
+                    },
                     { upsert: true }
                 );
             }
@@ -418,45 +548,178 @@ module.exports = (io, userSockets, sendNotification, cloudinary, authenticateTok
             // Use the same N8N MCQ generator already in server.js
             const N8N_MCQ_WEBHOOK = process.env.N8N_MCQ_GENERATOR_URL || 'https://aotms.app.n8n.cloud/webhook/generate-quiz';
 
+            const qCount = count || exam.num_questions || 10;
             const response = await axios.post(N8N_MCQ_WEBHOOK, {
                 topic: topic || exam.topic,
-                count: count || exam.num_questions,
-                difficulty: difficulty || exam.difficulty,
+                context: topic || exam.topic,
                 type: 'mcq',
-                context: `Interview examination for ${topic || exam.topic}`,
+                question_type: 'mcq',
+                count: qCount,
+                questionCount: qCount,
+                difficulty: difficulty || exam.difficulty,
                 timestamp: new Date().toISOString()
             }, { timeout: 120000 });
 
             let generatedQuestions = [];
-            const data = Array.isArray(response.data) ? response.data[0] : response.data;
+            let rawText = '';
 
-            // Normalize AI response — handle various response shapes from n8n
-            if (data && data.questions && Array.isArray(data.questions)) {
-                generatedQuestions = data.questions;
-            } else if (Array.isArray(data)) {
-                generatedQuestions = data;
+            // Handle various possible response structures from the N8N webhook
+            if (typeof response.data === 'string') {
+                rawText = response.data.trim();
+            } else if (response.data && typeof response.data === 'object') {
+                const d = Array.isArray(response.data) ? response.data[0] : response.data;
+                if (d && d.output && typeof d.output === 'string') {
+                    rawText = d.output.trim();
+                } else if (d && d.questions && Array.isArray(d.questions)) {
+                    generatedQuestions = d.questions;
+                } else if (Array.isArray(d)) {
+                    generatedQuestions = d;
+                } else {
+                    rawText = JSON.stringify(response.data);
+                }
+            }
+
+            // Parse raw text or clean markdown code block wrapper if present
+            if (generatedQuestions.length === 0 && rawText) {
+                const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+                const cleanedText = jsonMatch ? jsonMatch[1].trim() : rawText.trim();
+                try {
+                    let parsed = JSON.parse(cleanedText);
+
+                    // De-wrapper if output is nested inside another output
+                    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].output && typeof parsed[0].output === 'string') {
+                        const innerText = parsed[0].output;
+                        try {
+                            const innerMatch = innerText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+                            parsed = JSON.parse(innerMatch ? innerMatch[1] : innerText);
+                        } catch (e) {}
+                    } else if (typeof parsed === 'object' && parsed !== null && parsed.output && typeof parsed.output === 'string') {
+                        const innerText = parsed.output;
+                        try {
+                            const innerMatch = innerText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+                            parsed = JSON.parse(innerMatch ? innerMatch[1] : innerText);
+                        } catch (e) {}
+                    }
+
+                    // Recursively scan for questions array
+                    const findQuestionsArray = (obj) => {
+                        if (Array.isArray(obj)) {
+                            const looksLikeQuestions = obj.length > 0 && obj.some(item =>
+                                item && typeof item === 'object' && ('question' in item || 'question_text' in item || 'text' in item || 'Question' in item)
+                            );
+                            if (looksLikeQuestions) return obj;
+                            for (const item of obj) {
+                                const found = findQuestionsArray(item);
+                                if (found) return found;
+                            }
+                        } else if (typeof obj === 'object' && obj !== null) {
+                            if ('question' in obj || 'question_text' in obj || 'text' in obj || 'Question' in obj) {
+                                return [obj];
+                            }
+                            if (Array.isArray(obj.questions)) return obj.questions;
+                            if (Array.isArray(obj.data)) return obj.data;
+                            if (Array.isArray(obj.items)) return obj.items;
+                            if (Array.isArray(obj.output)) return obj.output;
+                            for (const key in obj) {
+                                if (['questions', 'data', 'items', 'output'].includes(key)) continue;
+                                const found = findQuestionsArray(obj[key]);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+
+                    const foundArr = findQuestionsArray(parsed);
+                    if (foundArr && Array.isArray(foundArr)) {
+                        generatedQuestions = foundArr;
+                    }
+                } catch (e) {
+                    console.error('[AI Question Generation] Failed to parse raw text response:', e.message);
+                }
             }
 
             // Delete existing AI questions for this exam and replace
             await InterviewQuestion.deleteMany({ exam_id: examId, source: 'ai' });
 
-            const toInsert = generatedQuestions.map((q, idx) => ({
-                exam_id: examId,
-                question_text: q.question || q.question_text || q.text,
-                options: (q.options || []).map((opt, i) => ({
-                    text: typeof opt === 'string' ? opt : opt.text,
-                    is_correct: (typeof opt === 'object' && opt.is_correct) ||
-                        (q.correct_answer && (q.correct_answer === opt || q.correct_answer === opt.text))
-                })),
-                correct_answer: q.correct_answer || q.answer,
-                explanation: q.explanation || q.explanation_text || '',
-                difficulty: difficulty || exam.difficulty,
-                marks: 1,
-                source: 'ai',
-                order_index: idx
-            }));
+            const toInsert = generatedQuestions.map((q, idx) => {
+                const qText = String(q.question || q.question_text || q.text || q.Question || q.questionText || '').trim();
 
-            const saved = await InterviewQuestion.insertMany(toInsert);
+                let opts = [];
+                if (Array.isArray(q.options)) {
+                    opts = q.options.map(opt => {
+                        if (typeof opt === 'string') {
+                            return { text: opt.trim(), is_correct: false };
+                        } else if (opt && typeof opt === 'object') {
+                            return {
+                                text: String(opt.text || opt.option || '').trim(),
+                                is_correct: !!(opt.is_correct || opt.isCorrect)
+                            };
+                        }
+                        return { text: String(opt).trim(), is_correct: false };
+                    });
+                } else if (q.optionA || q.OptionA) {
+                    const keys = ['optionA', 'optionB', 'optionC', 'optionD', 'optionE', 'OptionA', 'OptionB', 'OptionC', 'OptionD', 'OptionE'];
+                    keys.forEach(k => {
+                        if (q[k]) {
+                            opts.push({ text: String(q[k]).trim(), is_correct: false });
+                        }
+                    });
+                } else if (typeof q.options === 'object' && q.options !== null) {
+                    opts = Object.values(q.options).map(opt => {
+                        if (opt && typeof opt === 'object') {
+                            return { text: String(opt.text || '').trim(), is_correct: !!(opt.is_correct || opt.isCorrect) };
+                        }
+                        return { text: String(opt).trim(), is_correct: false };
+                    });
+                }
+
+                const correctAns = String(q.correct_answer || q.answer || q.CorrectAnswer || q.Answer || '').trim();
+
+                if (correctAns && opts.length > 0) {
+                    if (/^[A-E]$/i.test(correctAns)) {
+                        const charIdx = correctAns.toUpperCase().charCodeAt(0) - 65;
+                        if (opts[charIdx]) {
+                            opts[charIdx].is_correct = true;
+                        }
+                    } else {
+                        let foundMatch = false;
+                        opts.forEach(o => {
+                            if (o.text.toLowerCase() === correctAns.toLowerCase()) {
+                                o.is_correct = true;
+                                foundMatch = true;
+                            }
+                        });
+                        if (!foundMatch && !isNaN(Number(correctAns))) {
+                            const numIdx = Number(correctAns) - 1;
+                            if (opts[numIdx]) {
+                                opts[numIdx].is_correct = true;
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: Ensure at least one correct option
+                if (opts.length > 0 && !opts.some(o => o.is_correct)) {
+                    opts[0].is_correct = true;
+                }
+
+                return {
+                    exam_id: examId,
+                    question_text: qText,
+                    options: opts,
+                    correct_answer: correctAns,
+                    explanation: String(q.explanation || q.explanation_text || q.Explanation || '').trim(),
+                    difficulty: difficulty || exam.difficulty,
+                    marks: 1,
+                    source: 'ai',
+                    order_index: idx
+                };
+            }).filter(q => q.question_text !== '' && q.options.length >= 2 && q.options.every(o => o.text !== ''));
+
+            let saved = [];
+            if (toInsert.length > 0) {
+                saved = await InterviewQuestion.insertMany(toInsert);
+            }
 
             res.json({
                 message: `${saved.length} questions generated and saved`,

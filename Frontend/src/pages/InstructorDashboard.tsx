@@ -393,35 +393,13 @@ function WelcomeBanner({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full lg:w-auto mt-6 lg:mt-0 relative">
-          <button 
-            className="h-10 px-5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 whitespace-nowrap"
-            onClick={() => navigate('/instructor/courses')}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Create New Course</span>
-          </button>
-          <button
-            className="h-10 px-5 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 whitespace-nowrap"
-            onClick={() => navigate('/instructor/live-classes')}
-          >
-            <Video className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Start Live Broadcast</span>
-          </button>
-          <button
-            className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-bold text-xs shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex items-center justify-center gap-2 whitespace-nowrap"
-            onClick={() => navigate('/instructor/live-classes')}
-          >
-            <Calendar className="h-3.5 w-3.5 text-slate-500" />
-            <span>View Schedule</span>
-          </button>
+        <div className="space-y-1">
+          <p className="text-slate-800 font-medium text-sm">
+            {studentCount} students enrolled · All systems ready.
+          </p>
         </div>
       </div>
 
-      {/* Embedded 3D Lanyard - Exact Position from User Drawing */}
-      <div className="absolute top-0 right-1/4 w-[200px] h-full pointer-events-none hidden lg:block">
-         <Lanyard />
-      </div>
     </motion.div>
   );
 }

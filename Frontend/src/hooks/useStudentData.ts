@@ -262,12 +262,33 @@ export function useAvailableCourses() {
     const { user } = useAuth();
 
     return useQuery({
-        queryKey: ['available-courses'],
+        queryKey: ['available-courses', user?.id],
         queryFn: async () => {
             try {
-                // Use /public/courses which returns approved/published courses for all roles
                 const token = localStorage.getItem('access_token');
-                const res = await fetch(`${import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://loyola-lms.onrender.com/api')}/public/courses?limit=100`, {
+                const PROD_API = 'https://loyola-lms.onrender.com/api';
+                const BASE = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : PROD_API);
+
+                // Get student's department to filter courses
+                let deptParam = '';
+                if (user?.id) {
+                    try {
+                        const profileRes = await fetch(`${BASE}/user/profile`, {
+                            headers: token ? { Authorization: `Bearer ${token}` } : {}
+                        });
+                        if (profileRes.ok) {
+                            const data = await profileRes.json();
+                            // /user/profile returns { profile: {...}, user: {...} }
+                            const dept = data?.profile?.department || data?.department || null;
+                            if (dept) {
+                                console.log(`[Courses] Filtering catalog for dept: ${dept}`);
+                                deptParam = `&dept=${encodeURIComponent(dept)}`;
+                            }
+                        }
+                    } catch {}
+                }
+
+                const res = await fetch(`${BASE}/public/courses?limit=100${deptParam}`, {
                     headers: token ? { Authorization: `Bearer ${token}` } : {}
                 });
                 if (!res.ok) throw new Error('Failed to fetch courses');

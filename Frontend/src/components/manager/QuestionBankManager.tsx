@@ -488,7 +488,9 @@ export function QuestionBankManager({
   const [isSaving, setIsSaving] = useState(false);
 
   // ─── Save Dialog State ───
-  const { data: exams = [] } = useExams();
+  const { data: rawExams = [] } = useExams();
+  // Normalize _id → id so all exam.id references work regardless of populate state
+  const exams = rawExams.map((e: any) => ({ ...e, id: e.id || e._id?.toString?.() || '' }));
   const [isSaveWizardOpen, setIsSaveWizardOpen] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState('');
 
@@ -813,6 +815,12 @@ export function QuestionBankManager({
         
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full xl:w-auto">
           <TabsList className="bg-slate-100/50 p-1.5 rounded-[1.8rem] h-16 border border-slate-200/60 shadow-inner flex-1 sm:flex-none">
+            <TabsTrigger value="bank" className="rounded-[1.5rem] h-12 px-6 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              Question Bank
+            </TabsTrigger>
+            <TabsTrigger value="final-batches" className="rounded-[1.5rem] h-12 px-6 text-[10px] font-black uppercase tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              Final Batches
+            </TabsTrigger>
           </TabsList>
 
           <div className="flex items-center gap-4">
@@ -1598,7 +1606,7 @@ export function QuestionBankManager({
                       {/* Title below image */}
                       <div className="px-3 py-2.5">
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-700 truncate">{exam.title}</p>
-                        <p className="text-[9px] text-slate-400 font-medium">#{exam.id.slice(0, 6)}</p>
+                        <p className="text-[9px] text-slate-400 font-medium">#{(exam.id || exam._id || '').toString().slice(0, 6)}</p>
                       </div>
                     </div>
                   );
