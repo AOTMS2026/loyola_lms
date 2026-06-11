@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+const API_URL = import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com/api';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";

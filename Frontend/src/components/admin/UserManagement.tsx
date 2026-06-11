@@ -1220,7 +1220,7 @@ export function UserManagement({
                                 <a 
                                   href={performanceData.resume_url.startsWith('http') 
                                     ? performanceData.resume_url 
-                                    : `${(import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '')}${performanceData.resume_url.startsWith('/') ? '' : '/'}${performanceData.resume_url}`
+                                    : `${(import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com/api').replace(/\/api$/, '')}${performanceData.resume_url.startsWith('/') ? '' : '/'}${performanceData.resume_url}`
                                   } 
                                   target="_blank" 
                                   rel="noreferrer" 

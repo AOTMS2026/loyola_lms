@@ -72,7 +72,7 @@ export function StudentResumeScan() {
       if (resumeText) formData.append('text', resumeText);
 
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001/api'}/student/scan-resume`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com/api'}/student/scan-resume`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`

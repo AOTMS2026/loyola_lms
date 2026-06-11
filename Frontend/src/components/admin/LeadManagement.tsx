@@ -45,7 +45,7 @@ export function LeadManagement() {
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'}/api/data/leads`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com'}/api/data/leads`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
@@ -67,7 +67,7 @@ export function LeadManagement() {
 
   const updateStatus = async (id: string, status: string) => {
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001'}/api/leads/${id}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com'}/api/leads/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
