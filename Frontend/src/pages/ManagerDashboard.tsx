@@ -199,6 +199,20 @@ export default function ManagerDashboard() {
   const [buildingCourse, setBuildingCourse] = useState<InstructorCourse | null>(null);
   const [systemHealth, setSystemHealth] = useState(99.9);
   const [liveLearners, setLiveLearners] = useState(0);
+  const [managerDept, setManagerDept] = useState<string | null>(null);
+  const [deptStudentCount, setDeptStudentCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const fetchManagerInfo = async () => {
+      try {
+        const { fetchWithAuth } = await import('@/lib/api');
+        const me = await fetchWithAuth('/manager/me') as { department?: string; deptStudentCount?: number };
+        if (me?.department) setManagerDept(me.department);
+        if (me?.deptStudentCount !== undefined) setDeptStudentCount(me.deptStudentCount);
+      } catch {}
+    };
+    fetchManagerInfo();
+  }, []);
 
   useEffect(() => {
     const fetchPlatformStats = async () => {
@@ -327,8 +341,18 @@ export default function ManagerDashboard() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">Manager Dashboard</h1>
-          <p className="text-slate-500 font-medium">Welcome back, Manager. Here's what's happening today.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Manager Dashboard</h1>
+            {managerDept && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-primary text-white text-xs font-black uppercase tracking-widest shadow-md">
+                {managerDept} Dept
+              </span>
+            )}
+          </div>
+          <p className="text-slate-500 font-medium">
+            Welcome back{managerDept ? `, ${managerDept} Department Manager` : ', Manager'}.
+            {deptStudentCount !== null && ` Managing ${deptStudentCount} students.`}
+          </p>
         </div>
         <Button className="rounded-xl h-11 px-6 gap-2 shadow-lg shadow-primary/20" onClick={() => navigate('/manager/exams')}>
           <Plus className="h-4 w-4" />

@@ -11,6 +11,7 @@ const CourseSchema = new Schema({
     thumbnail_url: { type: String },
     instructor_ids: [{ type: Schema.Types.ObjectId, ref: 'User' }], // References to multiple Users
     category: { type: String },
+    department: { type: String }, // Department this course belongs to (CSE, ECE, etc.)
     price: { type: Number, default: 0 },
     original_price: { type: Number },
     status: { type: String, default: 'draft' }, // draft, published, archived, pending

@@ -334,6 +334,8 @@ const authenticateToken = async (req, res, next) => {
 // Role Caching (Simple In-Memory for now, similar to previous version)
 const roleCache = new Map();
 const ROLE_CACHE_TTL = 30 * 1000;
+const deptCache = new Map();
+const DEPT_CACHE_TTL = 60 * 1000;
 
 const getUserRole = async (userId) => {
     if (!userId) return null;
@@ -351,6 +353,24 @@ const getUserRole = async (userId) => {
         return role;
     } catch (error) {
         console.error(`[Auth] Failed to fetch role for ${userId}:`, error);
+        return null;
+    }
+};
+
+// Get the department a manager is assigned to (null = admin/unrestricted)
+const getManagerDepartment = async (userId) => {
+    if (!userId) return null;
+    const strId = userId.toString();
+    if (deptCache.has(strId)) {
+        const { dept, timestamp } = deptCache.get(strId);
+        if (Date.now() - timestamp < DEPT_CACHE_TTL) return dept;
+    }
+    try {
+        const profile = await Profile.findOne({ user_id: userId }).select('department role').lean();
+        const dept = profile?.department || null;
+        deptCache.set(strId, { dept, timestamp: Date.now() });
+        return dept;
+    } catch (e) {
         return null;
     }
 };
@@ -392,9 +412,23 @@ app.post('/api/admin/broadcast', authenticateToken, requireAdminOrManager, async
         if (!selectedUsers || selectedUsers.length === 0) {
             return res.status(400).json({ error: 'No recipients selected' });
         }
-
         if (!subject || !message) {
             return res.status(400).json({ error: 'Subject and message are required' });
+        }
+
+        // If manager, validate selected users are in their department
+        const requesterRole = await getUserRole(req.user.id);
+        if (requesterRole === 'manager') {
+            const managerDept = await getManagerDepartment(req.user.id);
+            if (managerDept) {
+                const deptProfiles = await Profile.find({ department: managerDept }).select('user_id').lean();
+                const allowedIds = new Set(deptProfiles.map(p => p.user_id.toString()));
+                const unauthorized = selectedUsers.filter(id => !allowedIds.has(id));
+                if (unauthorized.length > 0) {
+                    console.warn(`[Broadcast] Manager tried to message outside dept: ${unauthorized.length} blocked`);
+                    return res.status(403).json({ error: `You can only broadcast to ${managerDept} department students.` });
+                }
+            }
         }
 
         // ✅ FIX: Convert string IDs to ObjectId so MongoDB $in query actually matches
@@ -1846,9 +1880,13 @@ app.delete('/api/admin/question-bank/:topic', authenticateToken, requireInstruct
 
 app.get('/api/admin/courses-with-instructors', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
-        const courses = await Course.find({
-            instructor_ids: { $exists: true, $not: { $size: 0 } }
-        })
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
+        const courseQuery = { instructor_ids: { $exists: true, $not: { $size: 0 } } };
+        if (managerDept) courseQuery.department = managerDept;
+
+        const courses = await Course.find(courseQuery)
             .sort({ updated_at: -1, created_at: -1 })
             .lean();
 
@@ -2114,6 +2152,9 @@ app.get('/api/admin/course-enrollments/:courseId', authenticateToken, requireAdm
 
 app.get('/api/admin/instructors', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
         // 1. Get everyone with instructor role
         const roleUsers = await UserRole.find({ role: 'instructor' });
         const instructorRoleIds = roleUsers.map(r => r.user_id.toString());
@@ -2125,15 +2166,23 @@ app.get('/api/admin/instructors', authenticateToken, requireAdminOrManager, asyn
         // 3. Combine unique IDs
         const allInstructorIds = Array.from(new Set([...instructorRoleIds, ...assignedIds]));
 
-        // 4. Fetch Users and Profiles
+        // 4. Fetch Users and Profiles — if manager, filter by dept
+        const profileQuery = { user_id: { $in: allInstructorIds } };
+        if (managerDept) profileQuery.department = managerDept;
+
         const [users, profiles] = await Promise.all([
             User.find({ _id: { $in: allInstructorIds } }).select('full_name email avatar_url created_at'),
-            Profile.find({ user_id: { $in: allInstructorIds } })
+            Profile.find(profileQuery)
         ]);
+
+        // If manager, only include instructors whose profiles matched dept
+        const allowedUserIds = managerDept ? new Set(profiles.map(p => p.user_id.toString())) : null;
 
         const profileMap = new Map(profiles.map(p => [p.user_id.toString(), p]));
 
-        const result = users.map(u => {
+        const result = users
+            .filter(u => !allowedUserIds || allowedUserIds.has(u._id.toString()))
+            .map(u => {
             const userId = u._id.toString();
             const p = profileMap.get(userId);
             const roleDoc = roleUsers.find(r => r.user_id.toString() === userId);
@@ -2143,11 +2192,14 @@ app.get('/api/admin/instructors', authenticateToken, requireAdminOrManager, asyn
                 full_name: u.full_name || p?.full_name || 'Instructor',
                 email: u.email || p?.email,
                 mobile_number: p?.mobile_number || u.phone,
-                role: roleDoc?.role || 'instructor', // Default to instructor if teaching but has other role
+                role: roleDoc?.role || 'instructor',
                 created_at: u.created_at || p?.created_at,
                 avatar_url: u.avatar_url || p?.avatar_url,
                 approval_status: p?.approval_status || 'approved',
-                status: p?.approval_status === 'suspended' ? 'suspended' : 'active'
+                status: p?.approval_status === 'suspended' ? 'suspended' : 'active',
+                department: p?.department || null,
+                roll_number: p?.roll_number || null,
+                year: p?.year || null
             };
         });
 
@@ -2304,14 +2356,18 @@ app.delete('/api/admin/delete-user/:userId', authenticateToken, requireAdmin, as
 // Admin: Get all users cross-validated with User collection (no ghost/orphan profiles)
 app.get('/api/admin/users', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
         // Fetch all User IDs that actually exist in the users collection
         const existingUsers = await User.find({}).select('_id email full_name avatar_url created_at').lean();
         const existingUserIds = new Set(existingUsers.map(u => u._id.toString()));
 
-        // Fetch profiles only for users that still exist in the User collection
-        const profiles = await Profile.find({
-            user_id: { $in: Array.from(existingUserIds).map(id => new mongoose.Types.ObjectId(id)) }
-        }).lean();
+        // Fetch profiles — if manager, scope to their department
+        const profileQuery = { user_id: { $in: Array.from(existingUserIds).map(id => new mongoose.Types.ObjectId(id)) } };
+        if (managerDept) profileQuery.department = managerDept;
+
+        const profiles = await Profile.find(profileQuery).lean();
 
         // Fetch roles for existing users
         const roles = await UserRole.find({
@@ -2321,7 +2377,12 @@ app.get('/api/admin/users', authenticateToken, requireAdminOrManager, async (req
         const profileMap = profiles.reduce((acc, p) => { acc[p.user_id.toString()] = p; return acc; }, {});
         const roleMap = roles.reduce((acc, r) => { acc[r.user_id.toString()] = r.role; return acc; }, {});
 
-        const result = existingUsers.map(user => {
+        // Only include users whose profiles matched (scoping applied via profileMap)
+        const scopedUserIds = managerDept ? new Set(profiles.map(p => p.user_id.toString())) : existingUserIds;
+
+        const result = existingUsers
+            .filter(user => scopedUserIds.has(user._id.toString()))
+            .map(user => {
             const userId = user._id.toString();
             const profile = profileMap[userId] || {};
             const role = roleMap[userId] || 'student';
@@ -2421,6 +2482,19 @@ app.get('/api/admin/data-summary', authenticateToken, requireAdminOrManager, asy
 app.get('/api/admin/student-performance/:studentId', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
         const { studentId } = req.params;
+
+        // Manager dept check — cannot view students outside their dept
+        const requesterRole = await getUserRole(req.user.id);
+        if (requesterRole === 'manager') {
+            const managerDept = await getManagerDepartment(req.user.id);
+            if (managerDept) {
+                const studentProfile = await Profile.findOne({ user_id: studentId }).select('department').lean();
+                if (!studentProfile || studentProfile.department !== managerDept) {
+                    return res.status(403).json({ error: `Access denied. You can only view ${managerDept} department students.` });
+                }
+            }
+        }
+
         const enrollments = await Enrollment.find({ user_id: studentId }).populate('course_id').lean();
 
         const activeEnrollments = enrollments.filter(e => e.course_id && e.course_id.is_active !== false);
@@ -2708,6 +2782,18 @@ app.delete('/api/admin/permanent-delete/:dataType', authenticateToken, requireAd
     }
 });
 
+// Manager: get own department info
+app.get('/api/manager/me', authenticateToken, requireAdminOrManager, async (req, res) => {
+    try {
+        const role = await getUserRole(req.user.id);
+        const dept = role === 'manager' ? await getManagerDepartment(req.user.id) : null;
+        const deptStudentCount = dept ? await Profile.countDocuments({ department: dept }) : null;
+        res.json({ role, department: dept, deptStudentCount });
+    } catch (err) {
+        handleError(res, err, 'manager-me');
+    }
+});
+
 app.get('/api/user/profile', authenticateToken, async (req, res) => {
     try {
         let [role, profile] = await Promise.all([
@@ -2742,10 +2828,17 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
 });
 app.put('/api/user/profile', authenticateToken, async (req, res) => {
     try {
-        console.log("==> SCHEMA KEYS:", Object.keys(Profile.schema.paths));
-        console.log("==> PROFILE PUT RECEIVED FOR:", req.user.id);
-        console.log("==> PAYLOAD:", req.body);
         const updates = { ...req.body, updated_at: new Date() };
+
+        // Uniqueness checks on profile update — skip if value belongs to the same user
+        if (updates.mobile_number) {
+            const existing = await Profile.findOne({ mobile_number: updates.mobile_number, user_id: { $ne: req.user.id } });
+            if (existing) return res.status(400).json({ error: 'This mobile number is already registered with another account.' });
+        }
+        if (updates.roll_number) {
+            const existing = await Profile.findOne({ roll_number: updates.roll_number, user_id: { $ne: req.user.id } });
+            if (existing) return res.status(400).json({ error: 'This roll number is already registered with another account.' });
+        }
 
         // Update Profile
         await Profile.findOneAndUpdate(
@@ -4350,10 +4443,21 @@ app.get('/api/admin/resume-scans', authenticateToken, async (req, res) => {
         console.log(`[API] Fetching scans. User ID: ${userId}, Role: ${userRole}`);
 
         if (userRole === 'admin' || userRole === 'manager') {
-            const scans = await ResumeScan.find()
-                .populate('user_id', 'full_name email avatar_url')
-                .sort({ created_at: -1 });
-            console.log(`[API] Found ${scans.length} resume scans for role: ${userRole}`);
+            const managerDept = userRole === 'manager' ? await getManagerDepartment(userId) : null;
+            let scans;
+            if (managerDept) {
+                // Get dept student IDs first
+                const deptProfiles = await Profile.find({ department: managerDept }).select('user_id').lean();
+                const deptUserIds = deptProfiles.map(p => p.user_id);
+                scans = await ResumeScan.find({ user_id: { $in: deptUserIds } })
+                    .populate('user_id', 'full_name email avatar_url')
+                    .sort({ created_at: -1 });
+            } else {
+                scans = await ResumeScan.find()
+                    .populate('user_id', 'full_name email avatar_url')
+                    .sort({ created_at: -1 });
+            }
+            console.log(`[API] Found ${scans.length} resume scans for role: ${userRole}${managerDept ? ` dept: ${managerDept}` : ''}`);
             return res.json(scans);
         } else if (userRole === 'instructor') {
             // 1. Fetch instructor's courses
@@ -4927,26 +5031,31 @@ app.get('/api/student/exam-questions/:id', authenticateToken, async (req, res) =
 app.get('/api/manager/lookup-student/:studentId', authenticateToken, requireAdminOrManager, async (req, res) => {
     const { studentId } = req.params;
     try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
         // Try to find by User ID
         let user = await User.findById(studentId);
         if (!user) {
-            // Fallback: Try to find by Profile ID
             const profile = await Profile.findById(studentId);
-            if (profile) {
-                user = await User.findById(profile.user_id);
-            }
+            if (profile) user = await User.findById(profile.user_id);
         }
 
         if (!user) return res.status(404).json({ error: 'Student not found' });
 
         const profile = await Profile.findOne({ user_id: user._id });
 
+        // Block cross-dept access for managers
+        if (managerDept && profile?.department && profile.department !== managerDept) {
+            return res.status(403).json({ error: `Access denied. This student belongs to ${profile.department} department.` });
+        }
+
         res.json({
             id: user._id,
             full_name: user.full_name,
             email: user.email,
             avatar_url: user.avatar_url,
-            role: 'student', // Default assumption unless role checked
+            role: 'student',
             profile: profile
         });
     } catch (err) {
@@ -5104,12 +5213,24 @@ app.get('/api/admin/question-bank-summary', authenticateToken, requireInstructor
 // ─── Real-time Platform Stats ─────────────────────────────────────────────────
 app.get('/api/admin/platform-stats', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-        const [totalUsers, liveLearners, totalEnrollments, pendingEnrollments, dbStats] = await Promise.all([
-            Profile.countDocuments({}),
-            // Count profiles updated in the last 24 hrs as "active learners"
-            Profile.countDocuments({ updated_at: { $gte: oneDayAgo } }),
+        let totalUsers, liveLearners;
+        if (managerDept) {
+            // Scope to dept students only
+            const deptProfiles = await Profile.find({ department: managerDept }).select('user_id updated_at').lean();
+            totalUsers = deptProfiles.length;
+            liveLearners = deptProfiles.filter(p => p.updated_at && p.updated_at >= oneDayAgo).length;
+        } else {
+            [totalUsers, liveLearners] = await Promise.all([
+                Profile.countDocuments({}),
+                Profile.countDocuments({ updated_at: { $gte: oneDayAgo } })
+            ]);
+        }
+
+        const [totalEnrollments, pendingEnrollments, dbStats] = await Promise.all([
             Enrollment.countDocuments({}),
             Enrollment.countDocuments({ status: 'pending' }),
             mongoose.connection.db.stats().catch(() => null)
@@ -6086,13 +6207,23 @@ app.delete('/api/notifications/:id', authenticateToken, async (req, res) => {
 
 app.get('/api/admin/students', authenticateToken, requireAdminOrManager, async (req, res) => {
     try {
+        const requesterRole = await getUserRole(req.user.id);
+        const managerDept = requesterRole === 'manager' ? await getManagerDepartment(req.user.id) : null;
+
         // Include both students AND interns
         const studentRoles = await UserRole.find({ role: { $in: ['student', 'intern'] } }).select('user_id role');
         const studentIds = studentRoles.map(r => r.user_id);
         const roleMap = studentRoles.reduce((acc, r) => { acc[r.user_id.toString()] = r.role; return acc; }, {});
 
+        // If manager, filter to dept students only
+        let filteredStudentIds = studentIds;
+        if (managerDept) {
+            const deptProfiles = await Profile.find({ user_id: { $in: studentIds }, department: managerDept }).select('user_id').lean();
+            filteredStudentIds = deptProfiles.map(p => p.user_id);
+        }
+
         const students = await User.aggregate([
-            { $match: { _id: { $in: studentIds } } },
+            { $match: { _id: { $in: filteredStudentIds } } },
             {
                 $lookup: {
                     from: 'profiles',
@@ -6225,6 +6356,36 @@ app.get('/api/data/:table', authenticateToken, async (req, res) => {
                 query = { $and: [query, accessFilter] };
             } else {
                 query = accessFilter;
+            }
+        }
+
+        // Manager department scoping — restrict ALL data to their department
+        if (role === 'manager') {
+            const managerDept = await getManagerDepartment(req.user.id);
+            if (managerDept) {
+                // Tables scoped via student user_ids (student-related data)
+                const studentUserScopedTables = ['leaderboard_stats', 'leaderboard', 'course_enrollments', 'exam_results', 'resumescans', 'student_exam_access', 'attendance', 'coupons'];
+                // Tables scoped via department field directly (content created by dept manager)
+                const deptFieldTables = ['exams', 'question_bank', 'courses', 'batches', 'live_classes', 'course_modules', 'course_videos', 'course_resources'];
+
+                if (table === 'profiles') {
+                    const deptFilter = { department: managerDept };
+                    query = Object.keys(query).length > 0 ? { $and: [query, deptFilter] } : deptFilter;
+                    console.log(`[ACL] Manager scoped profiles to dept: ${managerDept}`);
+
+                } else if (studentUserScopedTables.includes(table)) {
+                    const deptProfiles = await Profile.find({ department: managerDept }).select('user_id').lean();
+                    const deptUserIds = deptProfiles.map(p => p.user_id);
+                    const idField = ['exam_results', 'student_exam_access'].includes(table) ? 'student_id' : 'user_id';
+                    const deptFilter = { [idField]: { $in: deptUserIds } };
+                    query = Object.keys(query).length > 0 ? { $and: [query, deptFilter] } : deptFilter;
+                    console.log(`[ACL] Manager scoped ${table} to dept: ${managerDept} (${deptUserIds.length} users)`);
+
+                } else if (deptFieldTables.includes(table)) {
+                    const deptFilter = { department: managerDept };
+                    query = Object.keys(query).length > 0 ? { $and: [query, deptFilter] } : deptFilter;
+                    console.log(`[ACL] Manager scoped ${table} to dept field: ${managerDept}`);
+                }
             }
         }
 
@@ -6579,6 +6740,15 @@ app.post('/api/data/:table', authenticateToken, async (req, res) => {
 
     try {
         const role = await getUserRole(req.user.id);
+
+        // Auto-assign department when manager creates content
+        if (role === 'manager') {
+            const managerDept = await getManagerDepartment(req.user.id);
+            if (managerDept && ['exams', 'question_bank', 'courses', 'batches', 'live_classes', 'mock_papers'].includes(table)) {
+                req.body.department = managerDept;
+                console.log(`[ACL] Manager auto-assigned department: ${managerDept} to new ${table}`);
+            }
+        }
 
         // Security: Restrict who can create entries in sensitive tables
         if (role !== 'admin' && role !== 'manager') {

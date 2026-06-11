@@ -26,6 +26,7 @@ const ExamSchema = new Schema({
     topics: [String],
     ai_generated: { type: Boolean, default: false },
     source_topic: { type: String },
+    department: { type: String }, // Department this exam belongs to (CSE, ECE, etc.)
     created_by: { type: Schema.Types.ObjectId, ref: 'User', index: true },
     is_active: { type: Boolean, default: true },
     custom_fields: [{ label: String, value: String }],
@@ -50,6 +51,7 @@ const QuestionBankSchema = new Schema({
     language: { type: String, default: 'javascript' }, // For coding type questions
     marks: { type: Number, default: 1 },
     course_id: { type: Schema.Types.ObjectId, ref: 'Course' }, // Optional course link
+    department: { type: String }, // Department this question belongs to
     approval_status: { type: String, default: 'pending' }, // pending, approved, rejected
     created_by: { type: Schema.Types.ObjectId, ref: 'User' },
     created_at: { type: Date, default: Date.now, index: true },

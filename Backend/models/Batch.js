@@ -11,6 +11,7 @@ const BatchSchema = new mongoose.Schema({
     start_time: { type: String }, // e.g. "09:00"
     end_time: { type: String },   // e.g. "11:00"
     batch_category: { type: String, enum: ['approve', 'remove'] },
+    department: { type: String }, // Department this batch belongs to
     processed_at: { type: Date },
     processed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 

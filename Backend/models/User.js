@@ -26,7 +26,7 @@ const ProfileSchema = new mongoose.Schema({
     email: { type: String },
     full_name: { type: String },
     avatar_url: { type: String },
-    mobile_number: { type: String, sparse: true },
+    mobile_number: { type: String },
     department: { type: String }, // e.g. CSE, ECE, EEE, DS, AI/ML, IT
     roll_number: { type: String }, // Student roll number (e.g. 23hp1a0549)
     year: { type: String }, // Academic year: 1, 2, 3, 4
@@ -56,8 +56,8 @@ const ProfileSchema = new mongoose.Schema({
     updated_at: { type: Date }
 });
 ProfileSchema.set('toJSON', { virtuals: true, versionKey: false, transform: (doc, ret) => { ret.id = ret.user_id; delete ret._id; } });
-ProfileSchema.index({ mobile_number: 1 }, { unique: true, sparse: true });
-ProfileSchema.index({ roll_number: 1 }, { unique: true, sparse: true });
+// Note: uniqueness for mobile_number and roll_number is validated at the application level (signup route)
+// DB-level unique indexes are intentionally removed to avoid seed/migration conflicts
 
 const ResumeScanSchema = new mongoose.Schema({
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
