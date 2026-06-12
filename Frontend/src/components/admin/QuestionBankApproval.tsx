@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useCourses } from '@/hooks/useManagerData';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
 import { Input } from "@/components/ui/input";
 import { SyncDataButton } from "./data/SyncDataButton";
 
@@ -74,12 +74,16 @@ interface Student {
     full_name: string;
     email: string;
     department?: string;
+    year?: string;
+    batch_name?: string;
+    roll_number?: string;
     avatar_url?: string;
     profile?: {
         full_name?: string;
         email?: string;
         avatar_url?: string;
         department?: string;
+        year?: string;
     };
     student_name?: string;
     student_email?: string;
@@ -180,6 +184,11 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
     // College Wise Grant
     const [selectedDept, setSelectedDept] = useState<string>("all");
     const [selectedDeptStudents, setSelectedDeptStudents] = useState<string[]>([]);
+
+    // Student tab cascading filters
+    const [studentFilterYear, setStudentFilterYear] = useState<string>("all");
+    const [studentFilterDept, setStudentFilterDept] = useState<string>("all");
+    const [studentFilterBatch, setStudentFilterBatch] = useState<string>("all");
 
     const fetchPendingBanks = async (showLoading = true, showToast = false) => {
         try {
@@ -703,12 +712,9 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                             <div className="space-y-3">
                                 {accessList.map((student, idx) => (
                                     <div key={student.student_id || idx} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                        <Avatar className="h-10 w-10">
-                                            <AvatarImage src={student.student_avatar} />
-                                            <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-primary flex-shrink-0">
                                                 {student.student_name?.charAt(0)?.toUpperCase() || 'S'}
-                                            </AvatarFallback>
-                                        </Avatar>
+                                            </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-bold text-slate-900 truncate uppercase text-[11px] tracking-tight">{student.student_name}</p>
                                             <p className="text-[10px] text-slate-500 truncate lowercase font-medium">{student.student_email}</p>
@@ -900,8 +906,72 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                     </TabsTrigger>
                                 </TabsList>
 
-                                <TabsContent value="student" className="space-y-6 mt-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                                    <div className="space-y-3">
+                                <TabsContent value="student" className="space-y-4 mt-0 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                    {/* Year Filter */}
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] ml-1">Year</Label>
+                                        <Select value={studentFilterYear} onValueChange={(v) => { setStudentFilterYear(v); setStudentFilterDept("all"); setStudentFilterBatch("all"); setSelectedStudentId(""); }}>
+                                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-slate-50/50 font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all">
+                                                <SelectValue placeholder="Select Year..." />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-2xl border-slate-200 shadow-xl p-1">
+                                                <SelectItem value="all" className="font-bold rounded-xl mb-1">All Years</SelectItem>
+                                                {Array.from(new Set(students.map(s => s.year || (s.profile as any)?.year).filter(Boolean))).sort().map(y => (
+                                                    <SelectItem key={y} value={y!} className="font-bold rounded-xl mb-1">Year {y}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {/* Dept Filter */}
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] ml-1">Department</Label>
+                                        <Select value={studentFilterDept} onValueChange={(v) => { setStudentFilterDept(v); setStudentFilterBatch("all"); setSelectedStudentId(""); }}>
+                                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-slate-50/50 font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all">
+                                                <SelectValue placeholder="Select Department..." />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-2xl border-slate-200 shadow-xl p-1">
+                                                <SelectItem value="all" className="font-bold rounded-xl mb-1">All Departments</SelectItem>
+                                                {Array.from(new Set(
+                                                    students
+                                                        .filter(s => studentFilterYear === "all" || (s.year || (s.profile as any)?.year) === studentFilterYear)
+                                                        .map(s => s.department || s.profile?.department)
+                                                        .filter(Boolean)
+                                                )).sort().map(d => (
+                                                    <SelectItem key={d} value={d!} className="font-bold rounded-xl mb-1">{d}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {/* Batch Filter */}
+                                    <div className="space-y-2">
+                                        <Label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] ml-1">Batch</Label>
+                                        <Select value={studentFilterBatch} onValueChange={(v) => { setStudentFilterBatch(v); setSelectedStudentId(""); }}>
+                                            <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-slate-50/50 font-bold text-slate-700 hover:bg-white hover:shadow-md transition-all">
+                                                <SelectValue placeholder="Select Batch..." />
+                                            </SelectTrigger>
+                                            <SelectContent className="rounded-2xl border-slate-200 shadow-xl p-1">
+                                                <SelectItem value="all" className="font-bold rounded-xl mb-1">All Batches</SelectItem>
+                                                {Array.from(new Set(
+                                                    students
+                                                        .filter(s => {
+                                                            const yr = s.year || (s.profile as any)?.year;
+                                                            const dept = s.department || s.profile?.department;
+                                                            return (studentFilterYear === "all" || yr === studentFilterYear) &&
+                                                                   (studentFilterDept === "all" || dept === studentFilterDept);
+                                                        })
+                                                        .map(s => s.batch_name)
+                                                        .filter(Boolean)
+                                                )).sort().map(b => (
+                                                    <SelectItem key={b} value={b!} className="font-bold rounded-xl mb-1">{b}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {/* Student Select */}
+                                    <div className="space-y-2">
                                         <Label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] ml-1 flex items-center gap-2">
                                             Select Student
                                         </Label>
@@ -910,25 +980,41 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                                 <SelectValue placeholder="Search for a student..." />
                                             </SelectTrigger>
                                             <SelectContent className="rounded-3xl border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.1)] max-h-[320px] p-2">
-                                                {students.map((student) => (
+                                                {students
+                                                    .filter(student => {
+                                                        const yr = student.year || (student.profile as any)?.year;
+                                                        const dept = student.department || student.profile?.department;
+                                                        const batch = student.batch_name;
+                                                        return (studentFilterYear === "all" || yr === studentFilterYear) &&
+                                                               (studentFilterDept === "all" || dept === studentFilterDept) &&
+                                                               (studentFilterBatch === "all" || batch === studentFilterBatch);
+                                                    })
+                                                    .map((student) => (
                                                     <SelectItem
                                                         key={student.id}
                                                         value={student.id}
                                                         className="font-bold py-3 hover:bg-slate-50 rounded-xl mb-1 data-[state=selected]:bg-primary/5 data-[state=selected]:text-primary"
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <Avatar className="h-8 w-8 border border-white shadow-sm">
-                                                                <AvatarImage src={student.avatar_url} />
-                                                                <AvatarFallback className="bg-slate-100 text-[10px] font-black">{student.full_name.charAt(0)}</AvatarFallback>
-                                                            </Avatar>
+                                                            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary text-xs flex-shrink-0">
+                                                                {student.full_name.charAt(0).toUpperCase()}
+                                                            </div>
                                                             <div className="flex flex-col">
                                                                 <span className="text-xs leading-none">{student.full_name}</span>
-                                                                <span className="text-[9px] text-slate-400 font-medium tracking-tight truncate w-32">{student.email}</span>
+                                                                <span className="text-[9px] text-slate-400 font-medium tracking-tight truncate w-32">
+                                                                    {student.roll_number ? `${student.roll_number} · ` : ''}{student.email}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     </SelectItem>
                                                 ))}
-                                                {students.length === 0 && (
+                                                {students.filter(s => {
+                                                    const yr = s.year || (s.profile as any)?.year;
+                                                    const dept = s.department || s.profile?.department;
+                                                    return (studentFilterYear === "all" || yr === studentFilterYear) &&
+                                                           (studentFilterDept === "all" || dept === studentFilterDept) &&
+                                                           (studentFilterBatch === "all" || s.batch_name === studentFilterBatch);
+                                                }).length === 0 && (
                                                     <div className="p-8 text-center">
                                                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">No students found</p>
                                                     </div>
@@ -1027,10 +1113,9 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                                 <Label className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Students in Batch ({batchStudents.length})</Label>
                                                 <div className="flex -space-x-1.5">
                                                     {batchStudents.slice(0, 4).map((s, i) => (
-                                                        <Avatar key={i} className="h-6 w-6 border-2 border-white shadow-sm">
-                                                            <AvatarImage src={s.profile?.avatar_url} />
-                                                            <AvatarFallback className="text-[8px] font-black bg-slate-100">{(s.profile?.full_name || 'S').charAt(0)}</AvatarFallback>
-                                                        </Avatar>
+                                                        <div key={i} className="h-6 w-6 rounded-full bg-primary/10 border-2 border-white shadow-sm flex items-center justify-center text-[8px] font-black text-primary">
+                                                            {(s.profile?.full_name || 'S').charAt(0)}
+                                                        </div>
                                                     ))}
                                                     {batchStudents.length > 4 && (
                                                         <div className="h-6 w-6 rounded-full bg-primary/5 border-2 border-white flex items-center justify-center text-[8px] font-black text-primary">
@@ -1053,10 +1138,9 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                                                 key={s.id}
                                                                 className="flex items-center gap-3 p-2 rounded-xl bg-white/50 border border-slate-50 hover:bg-white hover:border-primary/20 hover:shadow-sm transition-all group"
                                                             >
-                                                                <Avatar className="h-6 w-6 border-white shadow-sm">
-                                                                    <AvatarImage src={s.avatar_url || s.profile?.avatar_url} />
-                                                                    <AvatarFallback className="text-[8px] font-black">{(s.full_name || 'S').charAt(0)}</AvatarFallback>
-                                                                </Avatar>
+                                                                <div className="h-6 w-6 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-black flex-shrink-0">
+                                                                    {(s.full_name || 'S').charAt(0)}
+                                                                </div>
                                                                 <div className="flex flex-col min-w-0">
                                                                     <span className="text-[10px] font-bold text-slate-700 truncate">{s.full_name || s.profile?.full_name || s.student_name}</span>
                                                                     <span className="text-[8px] text-slate-400 truncate opacity-70">{s.profile?.email || s.student_email}</span>
@@ -1147,10 +1231,9 @@ export function QuestionBankApproval({ onSync, loading: externalLoading, mode }:
                                                                 )}>
                                                                     {selectedDeptStudents.includes(s.id) && <CheckCircle className="h-4 w-4 text-white" />}
                                                                 </div>
-                                                                <Avatar className="h-8 w-8 border-white shadow-sm shrink-0">
-                                                                    <AvatarImage src={s.avatar_url || s.profile?.avatar_url} />
-                                                                    <AvatarFallback className="text-[10px] font-black bg-slate-100">{(s.full_name || 'S').charAt(0)}</AvatarFallback>
-                                                                </Avatar>
+                                                                <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-black flex-shrink-0">
+                                                                    {(s.full_name || 'S').charAt(0)}
+                                                                </div>
                                                                 <div className="flex flex-col min-w-0 flex-1">
                                                                     <span className="text-[11px] font-bold text-slate-800 truncate">{s.full_name}</span>
                                                                     <span className="text-[9px] text-slate-400 truncate opacity-70">

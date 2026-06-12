@@ -411,21 +411,16 @@ export function AnimatedCharactersLogin({
       {/* Left Content Section */}
       <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#004E8C] via-[#0059a4] to-[#E64E00] p-12 text-white">
         <div className="relative z-20">
-          <a
-            href="/"
-            className="inline-block transition-transform hover:scale-105 active:scale-95 bg-white/5 backdrop-blur-sm p-3 rounded-2xl border border-white/10"
-          >
+          <a href="/" className="inline-block transition-transform hover:scale-105 active:scale-95">
             {logo ? (
               <img
                 src={logo}
                 alt="Logo"
-                className="h-12 lg:h-14 w-auto object-contain brightness-0 invert"
+                className="h-14 lg:h-16 w-auto object-contain"
               />
             ) : (
               <div className="flex items-center gap-2 text-lg font-black uppercase tracking-widest">
-                <div className="size-8 rounded-lg bg-white/10 backdrop-blur-sm flex items-center justify-center">
-                  <Sparkles className="size-4" />
-                </div>
+                <Sparkles className="size-5" />
                 <span>AOTMS</span>
               </div>
             )}

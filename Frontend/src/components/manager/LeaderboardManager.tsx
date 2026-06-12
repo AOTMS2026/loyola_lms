@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { useLeaderboard, useVerifyLeaderboardEntry, useBatches, useStudentBatches } from '@/hooks/useManagerData';
 import { useAuth } from '@/hooks/useAuth';
 import { Trophy, Medal, CheckCircle, Shield, User } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
 import { SyncDataButton } from '@/components/admin/data/SyncDataButton';
 import {
   Select,
@@ -173,9 +173,6 @@ export function LeaderboardManager({ onSync, loading: parentLoading = false }: L
               {filteredLeaderboard.map((entry, idx) => {
                 const userData = typeof entry.user_id === 'object' ? entry.user_id : null;
                 const displayName = userData?.full_name || 'Student';
-                const avatarUrl = userData?.avatar_url 
-                  ? (userData.avatar_url.startsWith('http') ? userData.avatar_url : `${import.meta.env.VITE_API_URL || 'https://loyola-lms.onrender.com/api'}/s3/public/${userData.avatar_url}`)
-                  : `https://api.dicebear.com/9.x/avataaars/svg?seed=${userData?.id || entry.id}`;
 
                 return (
                 <div
@@ -189,12 +186,9 @@ export function LeaderboardManager({ onSync, loading: parentLoading = false }: L
                       {getRankIcon(idx + 1)}
                     </div>
                     
-                    <Avatar className="h-9 w-9 sm:h-10 sm:w-10 border border-white shadow-sm flex-shrink-0">
-                      <AvatarImage src={avatarUrl} />
-                      <AvatarFallback className="bg-primary/10 text-primary text-[10px] sm:text-xs font-bold font-mono">
-                        {displayName.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
+                    <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-primary/10 border border-white shadow-sm flex items-center justify-center flex-shrink-0 font-black text-primary text-xs">
+                      {displayName.slice(0, 2).toUpperCase()}
+                    </div>
 
                     <div className="flex-1 min-w-0 pr-2">
                       <div className="flex items-center gap-1.5">

@@ -44,10 +44,16 @@ export default function LiveSession() {
 
         const setupMeeting = async () => {
             try {
-                const sdkKey = import.meta.env.VITE_ZOOM_CLIENT_ID;
+                const sdkKey = import.meta.env.VITE_ZOOM_CLIENT_ID
+                    || (window as any).__VITE_ZOOM_CLIENT_ID__
+                    || '';
 
                 if (!sdkKey) {
-                    throw new Error('Frontend VITE_ZOOM_CLIENT_ID is missing. Check your .env file or Render dashboard.');
+                    throw new Error(
+                        'Zoom SDK Key (VITE_ZOOM_CLIENT_ID) is not configured. ' +
+                        'Please add it to your Vercel project: ' +
+                        'Vercel Dashboard → Your Project → Settings → Environment Variables → Add VITE_ZOOM_CLIENT_ID'
+                    );
                 }
 
                 addLog('Verifying session schedule...');
@@ -156,9 +162,10 @@ export default function LiveSession() {
     }, [meetingId, user, role, password]);
 
     if (error) {
+        const isEnvError = error.includes('VITE_ZOOM_CLIENT_ID') || error.includes('SDK Key');
         return (
             <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-8 z-[10000]">
-                <div className="max-w-md w-full text-center space-y-8 animate-in fade-in zoom-in duration-300">
+                <div className="max-w-lg w-full text-center space-y-8 animate-in fade-in zoom-in duration-300">
                     <div className={cn(
                         "w-20 h-20 rounded-full flex items-center justify-center mx-auto ring-1",
                         isFinished ? "bg-amber-500/10 ring-amber-500/20" : "bg-red-500/10 ring-red-500/20"
@@ -171,6 +178,30 @@ export default function LiveSession() {
                         </h2>
                         <p className="text-slate-400 text-sm leading-relaxed">{error}</p>
                     </div>
+
+                    {isEnvError && (
+                        <div className="text-left bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3">
+                            <p className="text-slate-300 text-xs font-black uppercase tracking-widest">Fix: Add to Vercel Environment Variables</p>
+                            <div className="space-y-2">
+                                {[
+                                    'Go to vercel.com → Your Project',
+                                    'Settings → Environment Variables',
+                                    'Add: VITE_ZOOM_CLIENT_ID = NjmbRGboS82PrvvlTnDJcA',
+                                    'Redeploy the project',
+                                ].map((step, i) => (
+                                    <div key={i} className="flex items-start gap-3">
+                                        <span className="h-5 w-5 rounded-full bg-blue-600 text-white text-[10px] font-black flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                                        <span className="text-slate-300 text-xs font-medium">{step}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="mt-3 p-3 bg-slate-800 rounded-xl border border-slate-700">
+                                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Your SDK Key (from .env)</p>
+                                <code className="text-emerald-400 text-xs font-mono">NjmbRGboS82PrvvlTnDJcA</code>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-col gap-3">
                         {!isFinished && (
                             <Button className="h-12 bg-blue-600 hover:bg-blue-700 font-bold" onClick={() => window.location.reload()}>

@@ -15,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+// Avatar import removed - using initials only
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
@@ -176,12 +176,9 @@ function StudentRow({ student, onSendMessage, onViewDetails }: {
       {/* 1. Student Identity (col-span-6) */}
       <div className="col-span-12 lg:col-span-6 flex items-center gap-6">
         <div className="relative flex-shrink-0 group-hover:scale-105 transition-transform duration-500">
-          <Avatar className="h-16 w-16 border-4 border-white shadow-2xl ring-1 ring-slate-100 rounded-2xl overflow-hidden">
-            <AvatarImage src={student.avatarUrl ? (student.avatarUrl.startsWith('http') ? student.avatarUrl : `${import.meta.env.VITE_API_URL || '/api'}/s3/public/${student.avatarUrl}`) : `https://api.dicebear.com/9.x/avataaars/svg?seed=${student.userId}`} />
-            <AvatarFallback className="bg-slate-100 text-slate-900 text-xl font-black">
-              {student.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-            </AvatarFallback>
-          </Avatar>
+          <div className="h-16 w-16 border-4 border-white shadow-2xl ring-1 ring-slate-100 rounded-2xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <span className="text-xl font-black text-primary">{student.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}</span>
+          </div>
           <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg border-4 border-white bg-slate-900 shadow-lg flex items-center justify-center">
             <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
           </div>
@@ -486,15 +483,7 @@ export function InstructorStudentDashboard() {
   // Initial auto-selection of batch filter based on instructor's assigned session
   const [hasAutoSet, setHasAutoSet] = useState(false);
 
-  useEffect(() => {
-    if (courses && courses.length > 0 && !hasAutoSet && batchFilter === 'all') {
-      const assignedSessions = Array.from(new Set(courses.map(c => c.assigned_session).filter(s => s && s !== 'all')));
-      if (assignedSessions.length === 1 && (assignedSessions[0] === 'morning' || assignedSessions[0] === 'afternoon' || assignedSessions[0] === 'evening')) {
-        setBatchFilter(assignedSessions[0]);
-        setHasAutoSet(true);
-      }
-    }
-  }, [courses, batchFilter, hasAutoSet]);
+  // Batch defaults to all
 
 
   const groupedStudents = useMemo(() => {
@@ -790,12 +779,9 @@ export function InstructorStudentDashboard() {
               </DialogHeader>
               <div className="bg-slate-900 h-24 relative">
                 <div className="absolute -bottom-8 left-8">
-                  <Avatar className="h-20 w-20 border-4 border-white shadow-xl">
-                    <AvatarImage src={selectedStudent.avatarUrl ? (selectedStudent.avatarUrl.startsWith('http') ? selectedStudent.avatarUrl : `${import.meta.env.VITE_API_URL || '/api'}/s3/public/${selectedStudent.avatarUrl}`) : `https://api.dicebear.com/9.x/avataaars/svg?seed=${selectedStudent.userId}`} />
-                    <AvatarFallback className="bg-primary/10 text-primary text-xl font-black">
-                      {selectedStudent.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="h-20 w-20 border-4 border-white shadow-xl rounded-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-2xl font-black text-primary">{selectedStudent.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}</span>
+                  </div>
                 </div>
               </div>
               <div className="pt-12 px-8 pb-8 space-y-6">

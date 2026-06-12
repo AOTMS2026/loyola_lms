@@ -49,6 +49,7 @@ import {
   useCourses,
   useBatches,
   type Exam,
+  type ExamResult,
 } from "@/hooks/useManagerData";
 import { useInstructorRatings } from "@/hooks/useInstructorData";
 import { useAuth } from "@/hooks/useAuth";
@@ -88,6 +89,11 @@ import {
   BrainCircuit,
   ChevronDown,
   ChevronUp,
+  BarChart2,
+  Users2,
+  TrendingUp,
+  Award,
+  AlertTriangle,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
@@ -190,6 +196,7 @@ function ExamCard({
   exam,
   onUpdate,
   onDelete,
+  onDeleteRequest,
   onConfigure,
   isPast,
   userRole,
@@ -202,6 +209,7 @@ function ExamCard({
     approval_status?: string;
   }) => void;
   onDelete: (id: string) => void;
+  onDeleteRequest?: (exam: Exam) => void;
   onConfigure?: (exam: Exam) => void;
   isPast?: boolean;
   userRole?: string | null;
@@ -382,7 +390,11 @@ function ExamCard({
             className="h-11 xl:h-12 w-11 xl:w-12 rounded-xl xl:rounded-2xl text-slate-900 hover:text-destructive hover:bg-rose-50 transition-all border border-transparent hover:border-rose-100"
             onClick={(e) => {
               e.stopPropagation();
-              onDelete(exam.id);
+              if (onDeleteRequest) {
+                onDeleteRequest(exam);
+              } else {
+                onDelete(exam.id);
+              }
             }}
           >
             <Trash2 className="h-4 w-4" />
@@ -475,6 +487,16 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
   );
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
+  // Analysis dialog state
+  const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
+  const [analysisExam, setAnalysisExam] = useState<Exam | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<ExamResult[]>([]);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+
+  // Delete confirm dialog state
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [examToDelete, setExamToDelete] = useState<Exam | null>(null);
+
   const form = useForm<ExamFormValues>({
     resolver: zodResolver(examSchema),
     defaultValues: {
@@ -555,6 +577,26 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
     },
     [form, toast],
   );
+
+  const handleViewAnalysis = async (exam: Exam) => {
+    setAnalysisExam(exam);
+    setShowAnalysisDialog(true);
+    setLoadingAnalysis(true);
+    try {
+      const data = await fetchWithAuth(`/data/student_exam_results?sort=completed_at&order=desc`) as ExamResult[];
+      const filtered = Array.isArray(data) ? data.filter(r => r.exam_id === exam.id) : [];
+      setAnalysisResults(filtered);
+    } catch {
+      setAnalysisResults([]);
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const handleDeleteRequest = (exam: Exam) => {
+    setExamToDelete(exam);
+    setShowDeleteDialog(true);
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1236,7 +1278,8 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
                     userRole={userRole}
                     onUpdate={(p) => updateExam.mutate({ id: p.id, ...p })}
                     onDelete={(id) => deleteExam.mutate(id)}
-                    onConfigure={() => onNavigateToRepository?.()}
+                    onDeleteRequest={handleDeleteRequest}
+                    onConfigure={handleViewAnalysis}
                     onEdit={(examToEdit) => {
                       let dateStr = "";
                       if (examToEdit.scheduled_date) {
@@ -1291,6 +1334,141 @@ export function ExamScheduler({ onNavigateToRepository, onSync, loading: parentL
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* View Analysis Dialog */}
+      <Dialog open={showAnalysisDialog} onOpenChange={setShowAnalysisDialog}>
+        <DialogContent className="sm:max-w-lg rounded-[2rem] border-slate-200 shadow-2xl p-0 overflow-hidden">
+          <div className="bg-slate-900 px-6 py-5 text-white">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                <BarChart2 className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-base font-black leading-none">Exam Analysis</h2>
+                <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-widest font-bold">{analysisExam?.title}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {loadingAnalysis ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Loading results...</p>
+              </div>
+            ) : analysisResults.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center opacity-50">
+                <Activity className="h-12 w-12 mb-3" />
+                <p className="font-bold text-slate-900">No Submissions Yet</p>
+                <p className="text-xs text-slate-500 mt-1">Students have not attempted this exam yet.</p>
+              </div>
+            ) : (() => {
+              const completed = analysisResults.filter(r => r.status === 'completed');
+              const avgScore = completed.length > 0
+                ? Math.round(completed.reduce((sum, r) => sum + (r.percentage ?? 0), 0) / completed.length)
+                : 0;
+              const passed = completed.filter(r => (r.percentage ?? 0) >= (analysisExam?.passing_percentage || 40)).length;
+              return (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'Total Attempts', value: analysisResults.length, icon: Users2, color: 'bg-blue-50 text-blue-700' },
+                      { label: 'Completed', value: completed.length, icon: CheckCircle2, color: 'bg-emerald-50 text-emerald-700' },
+                      { label: 'Avg Score', value: `${avgScore}%`, icon: TrendingUp, color: 'bg-violet-50 text-violet-700' },
+                      { label: 'Passed', value: passed, icon: Award, color: 'bg-amber-50 text-amber-700' },
+                    ].map(stat => (
+                      <div key={stat.label} className={`p-4 rounded-2xl flex items-center gap-3 ${stat.color.split(' ')[0]}`}>
+                        <stat.icon className={`h-5 w-5 ${stat.color.split(' ')[1]}`} />
+                        <div>
+                          <p className="text-xl font-black leading-none">{stat.value}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider opacity-70 mt-0.5">{stat.label}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Top Scores</p>
+                    <div className="space-y-1 max-h-48 overflow-y-auto">
+                      {completed
+                        .sort((a, b) => (b.percentage ?? 0) - (a.percentage ?? 0))
+                        .slice(0, 10)
+                        .map((r, i) => (
+                          <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-400 w-5">#{i + 1}</span>
+                              <span className="text-xs font-bold text-slate-700">{r.student_id?.toString().slice(0, 8)}...</span>
+                            </div>
+                            <Badge className={`text-[10px] font-black ${
+                              (r.percentage ?? 0) >= (analysisExam?.passing_percentage || 40)
+                                ? 'bg-emerald-100 text-emerald-700 border-none'
+                                : 'bg-rose-100 text-rose-700 border-none'
+                            }`}>{r.score}/{r.total_marks} ({r.percentage}%)</Badge>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          <div className="px-6 pb-5 flex justify-end">
+            <Button onClick={() => setShowAnalysisDialog(false)} className="rounded-2xl h-10 px-6 font-black text-[10px] uppercase tracking-widest">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirm Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-md rounded-2xl border-rose-200 shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-rose-700">
+              <AlertTriangle className="h-5 w-5" />
+              Delete Exam
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Are you sure you want to permanently delete this exam? This action{" "}
+              <span className="font-black text-rose-600">cannot be undone</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-3">
+            <div className="p-4 bg-rose-50 rounded-xl border border-rose-200 space-y-1">
+              <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Exam to be deleted</p>
+              <p className="text-base font-black text-rose-900">{examToDelete?.title}</p>
+              {examToDelete?.exam_type && (
+                <Badge className="bg-rose-100 text-rose-700 border-none text-[9px] font-black uppercase">{examToDelete.exam_type}</Badge>
+              )}
+            </div>
+            <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
+                All student submissions, scores, and results associated with this exam will also be permanently removed.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)} className="flex-1 rounded-xl">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-700"
+              onClick={() => {
+                if (examToDelete) {
+                  deleteExam.mutate(examToDelete.id);
+                  setShowDeleteDialog(false);
+                  setExamToDelete(null);
+                }
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Yes, Delete Exam
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
