@@ -14,7 +14,8 @@ import {
   Loader2,
   Presentation,
   BookOpen,
-  Users
+  Users,
+  Archive
 } from 'lucide-react';
 import { 
   Card, 
@@ -53,7 +54,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { toast } from '@/hooks/use-toast';
-import { fetchWithAuth } from '@/lib/api';
+import { fetchWithAuth, API_URL } from '@/lib/api';
 import { 
   useResources, 
   useCreateResource, 
@@ -116,25 +117,78 @@ export function ResourcesDashboard() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerUrl, setViewerUrl] = useState('');
   const [viewerTitle, setViewerTitle] = useState('');
-  const [viewerType, setViewerType] = useState<'pdf' | 'image' | 'video' | 'other'>('pdf');
+  const [viewerType, setViewerType] = useState<'pdf' | 'image' | 'video' | 'zip' | 'office' | 'other'>('pdf');
   const [iframeLoading, setIframeLoading] = useState(false);
+  const [pdfPages, setPdfPages] = useState<string[] | null>(null);
+  const [pdfPagesLoading, setPdfPagesLoading] = useState(false);
+  const [zipEntries, setZipEntries] = useState<{ name: string; size: number }[] | null>(null);
+  const [zipEntriesLoading, setZipEntriesLoading] = useState(false);
 
-  const getFileType = (url: string): 'pdf' | 'image' | 'video' | 'other' => {
+  const formatBytes = (bytes: number): string => {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  const getFileType = (url: string, fallbackExt?: string): 'pdf' | 'image' | 'video' | 'zip' | 'office' | 'other' => {
     const lower = url.toLowerCase().split('?')[0];
-    if (lower.endsWith('.pdf')) return 'pdf';
-    if (lower.match(/\.(jpeg|jpg|gif|png|webp|svg)$/)) return 'image';
-    if (lower.match(/\.(mp4|webm|ogg|mov)$/)) return 'video';
+    const urlExt = lower.match(/\.([a-z0-9]+)$/)?.[1];
+    const ext = urlExt || (fallbackExt || '').toLowerCase();
+    if (ext === 'pdf') return 'pdf';
+    if (['jpeg', 'jpg', 'gif', 'png', 'webp', 'svg'].includes(ext)) return 'image';
+    if (['mp4', 'webm', 'ogg', 'mov'].includes(ext)) return 'video';
+    if (ext === 'zip') return 'zip';
+    if (['ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) return 'office';
     return 'other';
   };
 
-  const handleViewContent = (resource: CourseResource) => {
+  const handleViewContent = async (resource: CourseResource) => {
     const url = resource.file_url || '';
-    const type = getFileType(url);
+    const type = getFileType(url, resource.upload_format);
+    console.log('[ResourcesDashboard] handleViewContent →', { url, uploadFormat: resource.upload_format, detectedType: type });
     setViewerTitle(resource.asset_title);
     setViewerType(type);
     setIframeLoading(true);
-    if (type === 'pdf' || type === 'other') {
-      // Google Docs Viewer — works for image PDFs, text PDFs, raw PDFs, all types
+    setPdfPages(null);
+    setZipEntries(null);
+
+    if (type === 'pdf') {
+      // Render as page images — Google Docs Viewer fetches the raw .pdf server-side too,
+      // which hits the same Cloudinary "untrusted PDF delivery" 401 and shows nothing.
+      setPdfPagesLoading(true);
+      try {
+        const { pages } = await fetchWithAuth<{ pages: string[] }>(`/upload/pdf-pages?fileUrl=${encodeURIComponent(url)}`);
+        setPdfPages(pages);
+      } catch (err) {
+        console.error('Failed to load PDF pages:', err);
+        setPdfPages([]);
+      } finally {
+        setPdfPagesLoading(false);
+        setIframeLoading(false);
+      }
+    } else if (type === 'zip') {
+      // A zip has nothing to render visually — list what's inside instead, without ever
+      // exposing the actual file bytes or a download link.
+      setZipEntriesLoading(true);
+      try {
+        const { entries } = await fetchWithAuth<{ entries: { name: string; size: number }[] }>(`/upload/zip-contents?fileUrl=${encodeURIComponent(url)}`);
+        setZipEntries(entries);
+      } catch (err) {
+        console.error('Failed to load zip contents:', err);
+        setZipEntries([]);
+      } finally {
+        setZipEntriesLoading(false);
+        setIframeLoading(false);
+      }
+    } else if (type === 'office') {
+      // Office Online Viewer — the properly supported option for ppt/doc/xls, unlike
+      // Google's ad-hoc viewer which frequently fails on URLs it hasn't seen before
+      const officeViewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`;
+      console.log('[ResourcesDashboard] Using Office Online Viewer:', officeViewerUrl);
+      setViewerUrl(officeViewerUrl);
+    } else if (type === 'other') {
+      // Google Docs Viewer fallback for anything else
       setViewerUrl(`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`);
     } else {
       setViewerUrl(url);
@@ -210,7 +264,7 @@ export function ResourcesDashboard() {
 
         // Call the new Backend API endpoint for storage upload
         const token = localStorage.getItem('access_token');
-        const res = await fetch(`${import.meta.env.VITE_API_URL || '/api'}/upload/course-resources`, {
+        const res = await fetch(`${API_URL}/upload/course-resources`, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${token}`
@@ -219,8 +273,14 @@ export function ResourcesDashboard() {
         });
 
         if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.error || 'Upload failed');
+            let errMsg = `Upload failed (status ${res.status})`;
+            try {
+                const err = await res.json();
+                errMsg = err.error || errMsg;
+            } catch {
+                if (res.status === 413) errMsg = 'File is too large to upload.';
+            }
+            throw new Error(errMsg);
         }
 
         const { url: publicUrl } = await res.json();
@@ -652,7 +712,7 @@ export function ResourcesDashboard() {
 
           {/* Viewer Body */}
           <div
-            className="flex-1 overflow-hidden relative bg-slate-100 select-none"
+            className="flex-1 overflow-y-auto relative bg-slate-100 select-none"
             style={{ userSelect: 'none' }}
           >
             {iframeLoading && (
@@ -662,7 +722,64 @@ export function ResourcesDashboard() {
               </div>
             )}
 
-            {viewerType === 'image' ? (
+            {viewerType === 'pdf' ? (
+              <>
+                {pdfPagesLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100 z-10 gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm font-medium text-slate-500">Loading pages…</p>
+                  </div>
+                )}
+                {pdfPages && pdfPages.length === 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+                    <p className="text-sm font-medium">Could not load this document.</p>
+                  </div>
+                )}
+                {pdfPages && pdfPages.length > 0 && (
+                  <div className="flex flex-col items-center gap-3 py-4" onContextMenu={(e) => e.preventDefault()}>
+                    {pdfPages.map((pageUrl, i) => (
+                      <img
+                        key={i}
+                        src={pageUrl}
+                        alt={`Page ${i + 1}`}
+                        className="max-w-full shadow-md rounded-sm"
+                        draggable={false}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : viewerType === 'zip' ? (
+              <div className="p-6">
+                {zipEntriesLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100 z-10 gap-3">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm font-medium text-slate-500">Reading archive contents…</p>
+                  </div>
+                )}
+                {zipEntries && zipEntries.length === 0 && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-400">
+                    <p className="text-sm font-medium">Could not read this archive.</p>
+                  </div>
+                )}
+                {zipEntries && zipEntries.length > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wide">
+                      {zipEntries.length} file{zipEntries.length !== 1 ? 's' : ''} in this archive
+                    </div>
+                    <div className="divide-y divide-slate-100 max-h-full">
+                      {zipEntries.map((entry, i) => (
+                        <div key={i} className="flex items-center gap-3 px-4 py-2.5">
+                          <FileIcon className="h-4 w-4 text-slate-400 shrink-0" />
+                          <span className="text-sm text-slate-700 truncate flex-1">{entry.name}</span>
+                          <span className="text-xs text-slate-400 shrink-0">{formatBytes(entry.size)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : viewerType === 'image' ? (
               <div className="w-full h-full flex items-center justify-center p-4">
                 <img
                   src={viewerUrl}
@@ -688,7 +805,7 @@ export function ResourcesDashboard() {
                 </video>
               </div>
             ) : (
-              /* PDF & all other types — Google Docs Viewer handles image PDFs, text PDFs, raw PDFs */
+              /* Other file types — Google Docs Viewer fallback */
               <iframe
                 key={viewerUrl}
                 src={viewerUrl}

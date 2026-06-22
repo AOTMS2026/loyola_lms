@@ -4051,17 +4051,59 @@ app.post('/api/upload/course-resources', authenticateToken, requireInstructor, u
     try {
         if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
+        const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
+
+        // ZIP files go to S3 — Cloudinary's account-level "untrusted" flag blocks ZIP
+        // delivery entirely with no available bypass (unlike PDF, a ZIP can't be rasterized
+        // into images), so there's no way to make Cloudinary work for this format here.
+        if (ext === 'zip') {
+            console.log(`[System] Instructor ${req.user.id} uploading ZIP resource to S3...`);
+            const s3Key = `course_resources/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+            await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
+
+            return res.json({
+                url: s3Key, // raw S3 key — the generic /api/data/:table GET signs this into a usable URL automatically
+                public_id: s3Key,
+                format: 'zip',
+                original_filename: req.file.originalname,
+                view_url: s3Key,
+            });
+        }
+
         const b64 = Buffer.from(req.file.buffer).toString('base64');
         const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
 
         console.log(`[System] Instructor ${req.user.id} uploading course resource to Cloudinary...`);
 
-        const isPdf = (req.file.originalname || '').toLowerCase().endsWith('.pdf') || req.file.mimetype === 'application/pdf';
+        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'];
+        const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
+        // PDFs upload as 'image' so Cloudinary can rasterize individual pages as JPGs on
+        // demand for preview — page-image delivery isn't covered by the account's "PDF and
+        // ZIP files delivery" restriction, only delivering the raw .pdf itself is.
+        // Everything else (docx/ppt/xlsx/etc) goes through as 'raw' as before.
+        const resourceType = imageExts.includes(ext) ? 'image'
+            : videoExts.includes(ext) ? 'video'
+            : ext === 'pdf' ? 'image'
+            : 'raw';
 
-        const result = await cloudinary.uploader.upload(dataURI, {
+        const uploadOptions = {
             folder: 'course_resources',
-            resource_type: isPdf ? 'raw' : 'auto'
-        });
+            resource_type: resourceType,
+            pages: ext === 'pdf' ? true : undefined,
+        };
+
+        // 'raw' resource type never appends a format/extension to the delivery URL on its
+        // own — the public_id IS the full filename, so it has to include the extension
+        // explicitly or the resulting URL ends with no extension at all (e.g. .../abc123
+        // instead of .../abc123.docx), making file-type detection on the frontend impossible.
+        if (resourceType === 'raw') {
+            const safeBaseName = req.file.originalname
+                .replace(/\.[^/.]+$/, '')
+                .replace(/[^a-zA-Z0-9_-]/g, '_');
+            uploadOptions.public_id = `${Date.now()}-${safeBaseName}.${ext}`;
+        }
+
+        const result = await cloudinary.uploader.upload(dataURI, uploadOptions);
 
         res.json({
             url: result.secure_url,
@@ -4073,6 +4115,98 @@ app.post('/api/upload/course-resources', authenticateToken, requireInstructor, u
     } catch (err) {
         console.error('Resource upload failed:', err);
         handleError(res, err, 'upload-resource');
+    }
+});
+
+// Render a PDF as a sequence of page images instead of delivering the raw PDF file.
+// Cloudinary accounts flagged "untrusted" for PDF/ZIP delivery return 401 for the raw .pdf —
+// and since external viewers (Google Docs Viewer, Office Online Viewer) fetch that same raw
+// file server-side, they hit the identical 401 and show "No preview available". That restriction
+// does NOT apply to individual pages rasterized as JPGs, since that's image delivery, not PDF
+// delivery — this works even for PDFs uploaded before this fix existed.
+function parseCloudinaryUrl(fileUrl) {
+    const match = fileUrl.match(/\/([a-z]+)\/upload\/v\d+\/([^?]+)\.[a-zA-Z0-9]+(?:\?.*)?$/);
+    if (!match) return null;
+    const [, resourceType, publicId] = match;
+    const extMatch = fileUrl.match(/\.([a-zA-Z0-9]+)(?:\?.*)?$/);
+    return { resourceType, publicId, format: extMatch ? extMatch[1] : undefined };
+}
+
+app.get('/api/upload/pdf-pages', authenticateToken, async (req, res) => {
+    try {
+        const { fileUrl } = req.query;
+        if (!fileUrl) return res.status(400).json({ error: 'fileUrl is required' });
+
+        const parsed = parseCloudinaryUrl(fileUrl);
+        if (!parsed) return res.status(400).json({ error: 'Not a recognizable Cloudinary URL' });
+
+        let pageCount = 1;
+        try {
+            const info = await cloudinary.api.resource(parsed.publicId, { resource_type: 'image', pages: true });
+            pageCount = info.pages || 1;
+        } catch (err) {
+            console.warn('[PDF Pages] Could not fetch page count, defaulting to 1:', err.message);
+        }
+
+        const pages = Array.from({ length: pageCount }, (_, i) =>
+            cloudinary.url(parsed.publicId, {
+                resource_type: 'image',
+                type: 'upload',
+                secure: true,
+                page: i + 1,
+                format: 'jpg',
+            })
+        );
+
+        res.json({ pages });
+    } catch (err) {
+        handleError(res, err, 'pdf-pages');
+    }
+});
+
+// Minimal ZIP central-directory parser (no external dependency). Reads just the file
+// names/sizes from the archive's index — never extracts or exposes the actual file bytes.
+// Standard ZIP only (not ZIP64), which covers the vast majority of course-resource archives.
+function parseZipEntries(buffer) {
+    const EOCD_SIG = 0x06054b50;
+    const CDFH_SIG = 0x02014b50;
+
+    let eocdOffset = -1;
+    const minPos = Math.max(0, buffer.length - 22 - 65535);
+    for (let i = buffer.length - 22; i >= minPos; i--) {
+        if (buffer.readUInt32LE(i) === EOCD_SIG) { eocdOffset = i; break; }
+    }
+    if (eocdOffset === -1) throw new Error('Not a valid ZIP file');
+
+    const totalEntries = buffer.readUInt16LE(eocdOffset + 10);
+    let offset = buffer.readUInt32LE(eocdOffset + 16);
+
+    const entries = [];
+    for (let i = 0; i < totalEntries; i++) {
+        if (offset + 46 > buffer.length || buffer.readUInt32LE(offset) !== CDFH_SIG) break;
+        const uncompressedSize = buffer.readUInt32LE(offset + 24);
+        const fileNameLength = buffer.readUInt16LE(offset + 28);
+        const extraFieldLength = buffer.readUInt16LE(offset + 30);
+        const fileCommentLength = buffer.readUInt16LE(offset + 32);
+        const fileName = buffer.toString('utf8', offset + 46, offset + 46 + fileNameLength);
+
+        if (!fileName.endsWith('/')) entries.push({ name: fileName, size: uncompressedSize });
+        offset += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+    }
+    return entries;
+}
+
+app.get('/api/upload/zip-contents', authenticateToken, async (req, res) => {
+    try {
+        const { fileUrl } = req.query;
+        if (!fileUrl) return res.status(400).json({ error: 'fileUrl is required' });
+
+        const upstream = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const entries = parseZipEntries(Buffer.from(upstream.data));
+
+        res.json({ entries });
+    } catch (err) {
+        handleError(res, err, 'zip-contents');
     }
 });
 
